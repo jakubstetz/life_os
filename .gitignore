@@ -1,0 +1,8 @@
+# Local scratch, experiments, mock seeds used only on this machine
+/dev/
+
+# Environment — paths and secrets stay off git
+.env
+
+# OS / editor / tooling
+.DS_Store
