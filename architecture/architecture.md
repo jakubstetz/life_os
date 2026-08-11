@@ -208,7 +208,7 @@ The documentation that defines how Life OS operates.
 | System shape & principles               | `architecture/`        |
 | Per-domain *structure* and descriptions | `domains/`             |
 | Decision records                        | `architecture/ADRs/`   |
-| Agent start context                     | `AGENTS.md` / `_meta/` |
+| Agent start context                     | `AGENTS.md` / `CLAUDE.md` → `_meta/` (pointers + short pack) |
 
 
 Governance **tells** Execution how to behave and **describes** Knowledge shape.
@@ -225,7 +225,7 @@ Operational policy (public vs private, models, git): **[governance.md](governanc
 life_os/                         # STRUCTURE — git-tracked
 ├── .env                         # git-ignored — LIFE_OS_DATA_ROOT
 ├── articles/
-├── architecture/                # this map, principles, governance, working-with, ADRs, board
+├── architecture/                # this map, principles, governance, working-with, ADRs
 ├── domains/
 ├── apps/
 ├── bin/

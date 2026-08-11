@@ -6,6 +6,10 @@ This repo is the **structure** of that system: philosophy, architecture, per-dom
 
 ## Start here
 
+**Agents:** [`AGENTS.md`](AGENTS.md) / [`CLAUDE.md`](CLAUDE.md), then [`_meta/`](_meta/) (short pack — not a dump of the full architecture).
+
+**Humans / deep dive:**
+
 1. **[architecture/overview.md](architecture/overview.md)** — keystone (read order).
 2. **[architecture/architecture.md](architecture/architecture.md)** — system map (Ingest, Volumes, Workers, Apps, Lenses, Governance).
 3. **[architecture/principles.md](architecture/principles.md)** — load-bearing cuts.
