@@ -12,10 +12,5 @@
 
 ## Now
 
-- **`_meta/` + root pointers** in place; warm start = session pack + architecture spine (overview, architecture, principles, governance).  
-- Next Life OS substance: first **domain** doc (likely finances structure) and/or first real **app** with mock seed — pick when ready.
-
-## Open for the human
-
-- Confirm `_meta` layout and current-focus text.  
-- Choose next build: `domains/finances/` vs first `apps/` spike.
+- **Travel:** schema + `seeds/travel/seed.sql` rebuilt.  
+- **Next:** `apps/travel`.

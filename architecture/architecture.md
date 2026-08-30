@@ -148,7 +148,7 @@ Life OS **does not** hold live instance data and **is not** a process that brows
 
 **What they are.** Interactive tools under `apps/<name>/` that you open on purpose — financial review, travel, mail views, coaching hours, hub.
 
-**Data-as-a-disk.** An app is a machine with empty bays. You attach a volume via config (`LIFE_OS_DATA_ROOT` / optional per-app override). Same code path against **mock seeds** under `dev/seeds/` for development.
+**Data-as-a-disk.** An app is a machine with empty bays. You attach a volume via config (`LIFE_OS_DATA_ROOT` / optional per-app override). Same code path against **mock volumes** under `seeds/` for development.
 
 ```text
 life_os/
@@ -230,7 +230,8 @@ life_os/                         # STRUCTURE — git-tracked
 ├── apps/
 ├── bin/
 ├── skills/                      # when real
-└── dev/                         # git-ignored — mocks, scratch
+├── seeds/                       # mock volumes (rows in seed.sql)
+└── dev/                         # git-ignored scratch
 
 $LIFE_OS_DATA_ROOT/              # SUBSTANCE — outside repo
 ├── finance/ | travel/ | coaching/ | vault/ | .index/

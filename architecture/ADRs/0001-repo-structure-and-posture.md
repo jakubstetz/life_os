@@ -35,7 +35,7 @@ See: [../overview.md](../overview.md), [../architecture.md](../architecture.md),
 
 3. **Primary control = separate location.** Not “ignored but still inside the project.” Not “the model will respect permissions.” If a coding agent’s workspace is `life_os/`, private volumes are simply **not in that workspace**.
 
-4. **Git-ignored inside the repo (when present):** `dev/` (scratch, mock seeds), `.env`, and accidental `/data/` under the repo (backstop in `.gitignore`).
+4. **Git-ignored inside the repo (when present):** `dev/` (local scratch only), `.env`, accidental `/data/` under the repo, and `seeds/**/*.sqlite` (rebuild from `domains/<name>/schema.sql` + `views.sql` + tracked `seeds/<volume>/seed.sql`).
 
 5. **Remotes:** structure may go to a private remote. Instance data does not ride that remote; back up / sync the data root separately.
 

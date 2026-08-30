@@ -19,7 +19,7 @@ Repo posture and *why* instance data is outside the project root (agents, gitign
 
 2. **Apps mount volumes under `LIFE_OS_DATA_ROOT`** (root `.env`, never committed; see `.env.example`). Volumes are subfolders of that root (`finance/`, `travel/`, `vault/`, …). Apps resolve paths from that root (or an app-level override), not from a hard-coded life path inside the package. Same pattern as application code that connects to a database: the app is data-agnostic structure; the disk holds the rows.
 
-3. **Mocks** under `dev/seeds/` (git-ignored) or a path in `.env` — same code path as real mounts, for demos and public-tier shape work with frontier models.
+3. **Mocks** under `seeds/` (tracked `seed.sql` for rows; DDL in `domains/<name>/schema.sql` + `views.sql`; built `*.sqlite` gitignored) — same layout as live volumes, same app mount path via env. `dev/` stays local scratch only.
 
 4. **Hub app + `lifeos` shell command** form the default entry: run `lifeos`, get a browser homepage that navigates to installed apps. Apps must still be startable alone for development.
 

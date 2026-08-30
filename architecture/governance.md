@@ -36,7 +36,7 @@ If something is in doubt, treat it as **private**.
 
 **Routing:** a task is private if it needs private material (or would put private material in the prompt). Otherwise it is public. Do not “average down.”
 
-**Stay public while building tools:** use **mock volumes** (`dev/seeds/`) so structure work never needs real rows — same as SQL in git with no production dump.
+**Stay public while building tools:** use **mock volumes** (`seeds/`) so structure work never needs real rows — same as SQL in git with no production dump.
 
 **Who does what:** structure agents work public paths; workers on real volumes are private by default. Detail: [principles.md](principles.md) Principle 4 · [architecture.md § Workers](architecture.md#3-workers).
 

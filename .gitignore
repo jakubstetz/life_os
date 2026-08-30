@@ -1,5 +1,8 @@
-# Local scratch, experiments, mock seeds used only on this machine
+# Local scratch
 /dev/
+
+# Built mock DBs (rebuild from seed.sql)
+/seeds/**/*.sqlite
 
 # Environment — paths and secrets stay off git
 .env

@@ -35,7 +35,8 @@ life_os/                 # structure only
 ├── domains/
 ├── apps/                # when real
 ├── bin/                 # lifeos when real
-└── dev/                 # ignored mocks / scratch
+├── seeds/               # mock volumes (seed.sql = rows; schema in domains/)
+└── dev/                 # git-ignored scratch
 
 $LIFE_OS_DATA_ROOT/      # e.g. ~/LifeData — outside the repo
 ├── finance/
