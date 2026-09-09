@@ -80,6 +80,7 @@ CREATE TABLE loyalty_programs (
   id TEXT PRIMARY KEY,         -- Slug, e.g. united_mileageplus
   kind TEXT NOT NULL,          -- card | hotel | airline
   name TEXT NOT NULL,
+  airline TEXT,                -- IATA when kind is airline (e.g. UA)
   created_at INTEGER NOT NULL, -- UNIX seconds UTC
   updated_at INTEGER           -- UNIX seconds UTC (or NULL if never updated)
 );

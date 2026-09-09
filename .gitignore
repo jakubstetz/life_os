@@ -9,3 +9,12 @@
 
 # OS / editor / tooling
 .DS_Store
+
+# Python / Node (apps)
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+apps/**/node_modules/
+apps/**/dist/
+apps/**/.venv/

@@ -216,21 +216,21 @@ INSERT INTO flight_leg_portions (
 );
 
 -- Point valuations as of 2025-02-07 00:00 UTC (1738886400)
-INSERT INTO loyalty_programs (id, kind, name, created_at, updated_at) VALUES
-  ('amex_mr', 'card', 'AmEx Membership Rewards', 1738886400, 1738886400),
-  ('capital_one_miles', 'card', 'Capital One Miles', 1738886400, 1738886400),
-  ('citi_thankyou', 'card', 'Citi ThankYou Points', 1738886400, 1738886400),
-  ('hilton_honors', 'hotel', 'Hilton Honors', 1738886400, 1738886400),
-  ('ihg_one', 'hotel', 'IHG One Rewards', 1738886400, 1738886400),
-  ('marriott_bonvoy', 'hotel', 'Marriott Bonvoy', 1738886400, 1738886400),
-  ('hyatt', 'hotel', 'Hyatt World of Hyatt', 1738886400, 1738886400),
-  ('aa_aadvantage', 'airline', 'American Airlines Aadvantage', 1738886400, 1738886400),
-  ('delta_skymiles', 'airline', 'Delta SkyMiles', 1738886400, 1738886400),
-  ('frontier_miles', 'airline', 'Frontier Airlines Frontier Miles', 1738886400, 1738886400),
-  ('jetblue_trueblue', 'airline', 'JetBlue TrueBlue', 1738886400, 1738886400),
-  ('southwest_rr', 'airline', 'Southwest Airlines Rapid Rewards', 1738886400, 1738886400),
-  ('spirit_free_spirit', 'airline', 'Spirit Airlines Free Spirit', 1738886400, 1738886400),
-  ('united_mileageplus', 'airline', 'United Airlines MileagePlus', 1738886400, 1738886400);
+INSERT INTO loyalty_programs (id, kind, name, airline, created_at, updated_at) VALUES
+  ('amex_mr', 'card', 'AmEx Membership Rewards', NULL, 1738886400, 1738886400),
+  ('capital_one_miles', 'card', 'Capital One Miles', NULL, 1738886400, 1738886400),
+  ('citi_thankyou', 'card', 'Citi ThankYou Points', NULL, 1738886400, 1738886400),
+  ('hilton_honors', 'hotel', 'Hilton Honors', NULL, 1738886400, 1738886400),
+  ('ihg_one', 'hotel', 'IHG One Rewards', NULL, 1738886400, 1738886400),
+  ('marriott_bonvoy', 'hotel', 'Marriott Bonvoy', NULL, 1738886400, 1738886400),
+  ('hyatt', 'hotel', 'Hyatt World of Hyatt', NULL, 1738886400, 1738886400),
+  ('aa_aadvantage', 'airline', 'American Airlines Aadvantage', 'AA', 1738886400, 1738886400),
+  ('delta_skymiles', 'airline', 'Delta SkyMiles', 'DL', 1738886400, 1738886400),
+  ('frontier_miles', 'airline', 'Frontier Airlines Frontier Miles', 'F9', 1738886400, 1738886400),
+  ('jetblue_trueblue', 'airline', 'JetBlue TrueBlue', 'B6', 1738886400, 1738886400),
+  ('southwest_rr', 'airline', 'Southwest Airlines Rapid Rewards', 'WN', 1738886400, 1738886400),
+  ('spirit_free_spirit', 'airline', 'Spirit Airlines Free Spirit', 'NK', 1738886400, 1738886400),
+  ('united_mileageplus', 'airline', 'United Airlines MileagePlus', 'UA', 1738886400, 1738886400);
 
 INSERT INTO point_quotes (id, program_id, source, amount_per_point, currency, as_of, created_at, updated_at) VALUES
   ('q_amex_tpg', 'amex_mr', 'tpg', 0.0200, 'USD', 1738886400, 1738886400, NULL),

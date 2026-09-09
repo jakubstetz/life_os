@@ -25,6 +25,7 @@ SELECT
   p.id AS program_id,
   p.kind,
   p.name,
+  p.airline,
   q.currency,
   AVG(q.amount_per_point) AS average,
   MIN(q.amount_per_point) AS min_amount,

@@ -12,5 +12,4 @@
 
 ## Now
 
-- **Travel:** schema + `seeds/travel/seed.sql` rebuilt.  
-- **Next:** `apps/travel`.
+- **Travel:** schema, seed, and `apps/travel` (Python domain + FastAPI + React grid).

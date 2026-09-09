@@ -17,7 +17,7 @@ Repo posture and *why* instance data is outside the project root (agents, gitign
 
 1. **User-facing tools live under `apps/`**, each app in its own subdirectory, self-contained for UI and behavior.
 
-2. **Apps mount volumes under `LIFE_OS_DATA_ROOT`** (root `.env`, never committed; see `.env.example`). Volumes are subfolders of that root (`finance/`, `travel/`, `vault/`, …). Apps resolve paths from that root (or an app-level override), not from a hard-coded life path inside the package. Same pattern as application code that connects to a database: the app is data-agnostic structure; the disk holds the rows.
+2. **Apps mount volumes under `LIFE_OS_DATA_ROOT`** (root `.env`, never committed; see `.env.example`). Volumes are subfolders of that root (`finance/`, `travel/`, `vault/`, …). Apps resolve files from that root by convention (`travel/travel.sqlite`, …), not from a hard-coded life path or a per-app path override. Same pattern as application code that connects to a database: the app is data-agnostic structure; the disk holds the rows.
 
 3. **Mocks** under `seeds/` (tracked `seed.sql` for rows; DDL in `domains/<name>/schema.sql` + `views.sql`; built `*.sqlite` gitignored) — same layout as live volumes, same app mount path via env. `dev/` stays local scratch only.
 

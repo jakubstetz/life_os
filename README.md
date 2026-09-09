@@ -33,7 +33,7 @@ life_os/                 # structure only
 ├── articles/
 ├── architecture/
 ├── domains/
-├── apps/                # when real
+├── apps/
 ├── bin/                 # lifeos when real
 ├── seeds/               # mock volumes (seed.sql = rows; schema in domains/)
 └── dev/                 # git-ignored scratch

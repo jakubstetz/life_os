@@ -148,7 +148,7 @@ Life OS **does not** hold live instance data and **is not** a process that brows
 
 **What they are.** Interactive tools under `apps/<name>/` that you open on purpose — financial review, travel, mail views, coaching hours, hub.
 
-**Data-as-a-disk.** An app is a machine with empty bays. You attach a volume via config (`LIFE_OS_DATA_ROOT` / optional per-app override). Same code path against **mock volumes** under `seeds/` for development.
+**Data-as-a-disk.** An app is a machine with empty bays. You attach a volume via config (`LIFE_OS_DATA_ROOT`). Same code path against **mock volumes** under `seeds/` for development.
 
 ```text
 life_os/

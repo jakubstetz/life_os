@@ -1,0 +1,76 @@
+/* Life OS app tokens — decks surfaces at app density; teal accent.
+   Warm hues (green / amber / red) are reserved for status. Accent is
+   interaction only. Extract when app #2 lands (ADR 0002). */
+
+:root {
+  /* ---------- primitives (the only raw values) ---------- */
+  --c-bg: #010104;
+  --c-surface: #06070c;
+  --c-elevated: #0a0c12;
+  --c-overlay: #10131c;
+
+  --c-ink: #e9edf4;
+  --c-ink-2: #cdd7e4;
+  --c-ink-3: #586677;
+  --c-ink-4: #36415a;
+
+  --c-line: #16181f;
+  --c-line-2: #242830;
+
+  --c-teal: #1e7ab6;
+  --c-teal-bright: #56b0d4;
+
+  --c-green: #32dc4a;
+  --c-amber: #ffd166;
+  --c-red: #ff6b6b;
+  --c-blue: #6aa8ff;
+  --c-violet: #b388ff; /* PP identity mark only — not a second brand axis */
+
+  /* ---------- semantics (components read these) ---------- */
+  --bg: var(--c-bg);
+  --surface: var(--c-surface);
+  --elevated: var(--c-elevated);
+  --overlay: var(--c-overlay);
+
+  --text: var(--c-ink);
+  --text-2: var(--c-ink-2);
+  --text-3: var(--c-ink-3);
+  --text-4: var(--c-ink-4);
+
+  --border: var(--c-line);
+  --border-strong: var(--c-line-2);
+
+  --accent: var(--c-teal);
+  --accent-bright: var(--c-teal-bright);
+  --accent-tint: color-mix(in oklab, var(--accent) 9%, transparent);
+  --accent-line: color-mix(in oklab, var(--accent) 32%, transparent);
+  --accent-hover: color-mix(in oklab, var(--accent), white 14%);
+  --on-accent: var(--c-ink);
+
+  --ok: var(--c-green);
+  --warn: var(--c-amber);
+  --bad: var(--c-red);
+  --info: var(--c-blue);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --r-sm: 3px;
+  --r: 5px;
+  --r-lg: 8px;
+
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur: 140ms;
+  --glow: 0 0 0 1px var(--accent), 0 0 8px color-mix(in oklab, var(--accent) 55%, transparent);
+
+  /* aliases for existing class names */
+  --panel: var(--surface);
+  --line: var(--border);
+  --muted: var(--text-3);
+
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
