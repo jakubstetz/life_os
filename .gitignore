@@ -1,6 +1,9 @@
 # Local scratch
 /dev/
 
+# Local untracked runtime (pid files, logs, etc.)
+.local/
+
 # Built mock DBs (rebuild from seed.sql)
 /seeds/**/*.sqlite
 
