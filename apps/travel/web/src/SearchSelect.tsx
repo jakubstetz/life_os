@@ -16,7 +16,7 @@ export function SearchSelect({
   /** Display name for the current code, if known. */
   label?: string | null;
   onChange: (value: string | null) => void;
-  options: { value: string; name: string }[];
+  options: { value: string; name: string; detail?: string }[];
   placeholder?: string;
   allowCreate?: (query: string) => string | null;
   className?: string;
@@ -34,15 +34,17 @@ export function SearchSelect({
   const shown = useMemo(() => {
     const n = query.trim().toLowerCase();
     if (!n) return [];
-    const scored: { value: string; name: string; s: number }[] = [];
+    const scored: { value: string; name: string; detail?: string; s: number }[] = [];
     for (const o of options) {
       const code = o.value.toLowerCase();
       const name = o.name.toLowerCase();
+      const place = (o.detail ?? "").toLowerCase();
       let s = -1;
       if (code === n) s = 0;
       else if (code.startsWith(n)) s = 1;
       else if (name.startsWith(n)) s = 2;
       else if (name.includes(n) || code.includes(n)) s = 3;
+      else if (place.includes(n)) s = 4;
       if (s >= 0) scored.push({ ...o, s });
     }
     scored.sort((a, b) => a.s - b.s || a.value.localeCompare(b.value));
@@ -57,11 +59,14 @@ export function SearchSelect({
   }, [options, query, value]);
 
   const created = allowCreate?.(query.trim()) ?? null;
-  const rows: { value: string; name: string; create: boolean }[] = shown.map((o) => ({
-    value: o.value,
-    name: o.name,
-    create: false,
-  }));
+  const rows: { value: string; name: string; detail?: string; create: boolean }[] = shown.map(
+    (o) => ({
+      value: o.value,
+      name: o.name,
+      detail: o.detail,
+      create: false,
+    }),
+  );
   if (created && !rows.some((o) => o.value.toUpperCase() === created.toUpperCase())) {
     rows.push({ value: created, name: `Use “${created}”`, create: true });
   }
@@ -152,8 +157,11 @@ export function SearchSelect({
               r.name
             ) : (
               <>
-                <span className="ss-code">{r.value}</span>
-                {r.name}
+                <span className="ss-main">
+                  <span className="ss-code">{r.value}</span>
+                  <span className="ss-name">{r.name}</span>
+                </span>
+                {r.detail ? <span className="ss-detail">{r.detail}</span> : null}
               </>
             )}
           </button>

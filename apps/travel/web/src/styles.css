@@ -547,7 +547,7 @@ table.credits .date-picker-trig.plain.open {
   position: fixed;
   right: auto;
   z-index: 10000;
-  min-width: 16rem;
+  min-width: 20rem;
   max-height: min(280px, calc(100vh - 16px));
 }
 .search-select-menu .ss-search {
@@ -824,6 +824,8 @@ button.money-ccy:hover {
   box-shadow: 0 8px 24px color-mix(in oklab, black 40%, transparent);
 }
 .search-select-menu button {
+  display: flex;
+  align-items: baseline;
   width: 100%;
   justify-content: flex-start;
   gap: 8px;
@@ -837,9 +839,26 @@ button.money-ccy:hover {
 .search-select-menu button:hover,
 .search-select-menu button.on { background: color-mix(in oklab, white 5%, transparent); }
 .search-select-menu button.create { color: var(--accent); }
+.search-select-menu .ss-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
 .search-select-menu .ss-code {
   display: inline-block;
-  width: 1.8rem;
+  flex: 0 0 1.8rem;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.search-select-menu .ss-name {
+  min-width: 0;
+}
+.search-select-menu .ss-detail {
+  flex: 0 0 auto;
+  margin-left: auto;
+  text-align: right;
   color: var(--text-3);
   font-size: 11px;
 }
@@ -955,6 +974,9 @@ button.glow { box-shadow: var(--glow); }
 .badge-sx.unfiled { box-shadow: 0 0 0 1.5px var(--warn); }
 .badge-sx.filed { box-shadow: 0 0 0 1.5px var(--ok); }
 .route-map {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
   height: 200px;
   border: 1px solid var(--border);
   border-radius: var(--r);
@@ -1366,13 +1388,29 @@ tr.row-expired { opacity: 0.42; color: var(--text-3); }
 .modal-scrim {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 1000;
   display: grid;
   place-items: center;
   padding: 24px;
   background: color-mix(in oklab, var(--bg) 42%, transparent);
+  backdrop-filter: blur(0);
+  -webkit-backdrop-filter: blur(0);
+  opacity: 0;
+  transition:
+    opacity 340ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    backdrop-filter 340ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    -webkit-backdrop-filter 340ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.modal-scrim.open {
+  opacity: 1;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+}
+.modal-scrim.closing {
+  opacity: 0;
+  backdrop-filter: blur(0);
+  -webkit-backdrop-filter: blur(0);
+  pointer-events: none;
 }
 .modal {
   width: min(360px, 100%);
@@ -1387,6 +1425,19 @@ tr.row-expired { opacity: 0.42; color: var(--text-3); }
   background: var(--surface);
   color: inherit;
   box-shadow: 0 16px 48px color-mix(in oklab, black 50%, transparent);
+  opacity: 0;
+  transform: translateY(8px) scale(0.985);
+  transition:
+    opacity 300ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 340ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.modal-scrim.open .modal {
+  opacity: 1;
+  transform: none;
+}
+.modal-scrim.closing .modal {
+  opacity: 0;
+  transform: translateY(8px) scale(0.985);
 }
 .modal .insp-actions {
   margin-top: 4px;

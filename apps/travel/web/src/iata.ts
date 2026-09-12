@@ -18,6 +18,17 @@ export type Catalog = {
 
 const STATE_COUNTRIES = new Set(["US", "CA", "AU", "MX"]);
 
+export type SearchOption = { value: string; name: string; detail?: string };
+
+export function airportOptions(catalog: Catalog | null): SearchOption[] {
+  const countries = catalog?.countries ?? {};
+  return Object.entries(catalog?.airports ?? {}).map(([value, a]) => ({
+    value,
+    name: a.name,
+    detail: airportPlace(a, countries) || undefined,
+  }));
+}
+
 /** City + state (US/CA/AU/MX) or city + country. */
 export function airportPlace(a: Airport, countries: Record<string, string> = {}): string {
   const city = a.city ?? "";

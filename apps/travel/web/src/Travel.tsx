@@ -13,10 +13,11 @@ import {
 } from "react";
 import { api, type Flight, type FlightPayment, type LegRow, type TravelCredit, type Trip, type Valuation } from "./api";
 import { Iata } from "./AirportCode";
-import { useCatalog } from "./iata";
+import { airportOptions, useCatalog } from "./iata";
 import { RouteMap } from "./RouteMap";
 import { DatePicker } from "./DatePicker";
 import { placeFloat } from "./float";
+import { Modal } from "./Modal";
 import { SearchSelect } from "./SearchSelect";
 import {
   cpp,
@@ -567,14 +568,7 @@ export function Travel() {
   );
 
   const catalog = useCatalog();
-  const airportOpts = useMemo(
-    () =>
-      Object.entries(catalog?.airports ?? {}).map(([value, a]) => ({
-        value,
-        name: a.name,
-      })),
-    [catalog],
-  );
+  const airportOpts = useMemo(() => airportOptions(catalog), [catalog]);
 
   const commitPortions = useCallback(
     async (row: LegRow, next: PortionDraft[]) => {
@@ -836,7 +830,6 @@ export function Travel() {
         <CreateFlightForm
           onClose={() => setStubOpen(false)}
           onSaved={async (legId, flightId) => {
-            setStubOpen(false);
             await reload();
             selectLeg(legId, flightId);
           }}
@@ -846,7 +839,6 @@ export function Travel() {
         <CreateCreditForm
           onClose={() => setCreditOpen(false)}
           onSaved={async () => {
-            setCreditOpen(false);
             await reload();
           }}
         />
@@ -1403,14 +1395,7 @@ function Inspector({
       })),
     [catalog],
   );
-  const airportOpts = useMemo(
-    () =>
-      Object.entries(catalog?.airports ?? {}).map(([value, a]) => ({
-        value,
-        name: a.name,
-      })),
-    [catalog],
-  );
+  const airportOpts = useMemo(() => airportOptions(catalog), [catalog]);
 
   if (!row) {
     return (
@@ -1932,14 +1917,6 @@ function CreateFlightForm({
     api.credits().then(setCredits).catch(() => setCredits([]));
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const set = (k: string, v: unknown) => setDraft((d) => ({ ...d, [k]: v }));
   const num = (k: string) =>
     draft[k] == null || draft[k] === "" ? "" : String(draft[k]);
@@ -1952,14 +1929,7 @@ function CreateFlightForm({
       })),
     [catalog],
   );
-  const airportOpts = useMemo(
-    () =>
-      Object.entries(catalog?.airports ?? {}).map(([value, a]) => ({
-        value,
-        name: a.name,
-      })),
-    [catalog],
-  );
+  const airportOpts = useMemo(() => airportOptions(catalog), [catalog]);
 
   const airlineCode = ((draft.airline as string) || "").toUpperCase() || null;
   const ccy = ((draft.cost_currency as string) || "USD").toUpperCase();
@@ -1977,19 +1947,9 @@ function CreateFlightForm({
   const iataCode = (q: string) => (/^[A-Za-z]{3}$/.test(q) ? q.toUpperCase() : null);
 
   return (
-    <div
-      className="modal-scrim"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-flight-title"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={onClose} labelledBy="create-flight-title">
+      {(dismiss) => (
+        <>
         <div className="insp-kicker" id="create-flight-title">
           New flight
         </div>
@@ -2152,7 +2112,7 @@ function CreateFlightForm({
           </Prop>
         </div>
         <div className="insp-actions">
-          <button type="button" onClick={onClose}>
+          <button type="button" onClick={dismiss}>
             Cancel
           </button>
           <button
@@ -2194,7 +2154,8 @@ function CreateFlightForm({
                 });
                 const board = await api.legsBoard();
                 const leg = board.find((r) => r.flight_id === f.id);
-                onSaved(leg?.id ?? board[board.length - 1]?.id ?? "", f.id);
+                await onSaved(leg?.id ?? board[board.length - 1]?.id ?? "", f.id);
+                dismiss();
               } finally {
                 setBusy(false);
               }
@@ -2203,8 +2164,9 @@ function CreateFlightForm({
             Create
           </button>
         </div>
-      </div>
-    </div>
+        </>
+      )}
+    </Modal>
   );
 }
 
@@ -2861,14 +2823,6 @@ function CreateCreditForm({
   });
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const set = (k: string, v: unknown) => setDraft((d) => ({ ...d, [k]: v }));
   const num = (k: string) =>
     draft[k] == null || draft[k] === "" ? "" : String(draft[k]);
@@ -2885,9 +2839,10 @@ function CreateCreditForm({
   const fields = creditKindFields(kind);
 
   return (
-    <div className="modal-scrim" onMouseDown={onClose}>
-      <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
-        <h2>New credit</h2>
+    <Modal onClose={onClose} labelledBy="create-credit-title">
+      {(dismiss) => (
+        <>
+        <h2 id="create-credit-title">New credit</h2>
         <div className="insp-props">
           <Prop label="Airline">
             <SearchSelect
@@ -2993,7 +2948,7 @@ function CreateCreditForm({
           </Prop>
         </div>
         <div className="insp-actions">
-          <button type="button" onClick={onClose}>
+          <button type="button" onClick={dismiss}>
             Cancel
           </button>
           <button
@@ -3022,7 +2977,8 @@ function CreateCreditForm({
                   code: draft.code || null,
                   remarks: draft.remarks || null,
                 });
-                onSaved(saved.id);
+                await onSaved(saved.id);
+                dismiss();
               } finally {
                 setBusy(false);
               }
@@ -3031,7 +2987,8 @@ function CreateCreditForm({
             Create
           </button>
         </div>
-      </div>
-    </div>
+        </>
+      )}
+    </Modal>
   );
 }

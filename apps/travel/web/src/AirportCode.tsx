@@ -27,7 +27,15 @@ export function IataHover() {
       window.clearTimeout(timer);
       setTip(null);
     };
+    const pickerOpen = () =>
+      !!document.querySelector(
+        ".search-select-menu, .search-select .iata-code.open, .search-select input:focus",
+      );
     const onOver = (e: Event) => {
+      if (pickerOpen()) {
+        hide();
+        return;
+      }
       const t = e.target as Element | null;
       const airlineEl = t?.closest?.("[data-airline]");
       const iataEl = t?.closest?.("[data-iata]");
@@ -72,12 +80,22 @@ export function IataHover() {
       if (el && next && el.contains(next)) return;
       hide();
     };
+    const onDown = (e: Event) => {
+      const t = e.target as Element | null;
+      if (
+        t?.closest?.("[data-iata], [data-airline], .search-select, .search-select-menu")
+      ) {
+        hide();
+      }
+    };
     document.addEventListener("pointerover", onOver);
     document.addEventListener("pointerout", onOut);
+    document.addEventListener("pointerdown", onDown);
     return () => {
       window.clearTimeout(timer);
       document.removeEventListener("pointerover", onOver);
       document.removeEventListener("pointerout", onOut);
+      document.removeEventListener("pointerdown", onDown);
     };
   }, [catalog]);
 
