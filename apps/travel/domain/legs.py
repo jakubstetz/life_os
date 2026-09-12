@@ -5,6 +5,7 @@ import sqlite3
 from domain.db import now
 from domain.flights import _status
 from domain.ids import new_id
+from domain.payments import list_for_flight
 
 
 def _board_row(conn: sqlite3.Connection, leg: dict) -> dict:
@@ -42,6 +43,8 @@ def _board_row(conn: sqlite3.Connection, leg: dict) -> dict:
         "SELECT * FROM flights WHERE id = ?", (leg["flight_id"],)
     ).fetchone()
     flight = dict(flight) if flight else {}
+    if flight.get("id"):
+        flight["payments"] = list_for_flight(conn, flight["id"])
     trip = None
     if flight.get("trip_id"):
         trip = conn.execute(
@@ -147,3 +150,19 @@ def save_leg(conn: sqlite3.Connection, leg: dict) -> dict:
 
 def add_leg(conn: sqlite3.Connection, flight_id: str, remarks: str | None = None) -> dict:
     return save_leg(conn, {"flight_id": flight_id, "remarks": remarks})
+
+
+def delete_leg(conn: sqlite3.Connection, leg_id: str) -> None:
+    leg = get_leg(conn, leg_id)
+    if not leg:
+        raise KeyError(leg_id)
+    flight_id = leg["flight_id"]
+    conn.execute("DELETE FROM flight_leg_portions WHERE flight_leg_id = ?", (leg_id,))
+    conn.execute("DELETE FROM flight_legs WHERE id = ?", (leg_id,))
+    remaining = conn.execute(
+        "SELECT COUNT(*) FROM flight_legs WHERE flight_id = ?", (flight_id,)
+    ).fetchone()[0]
+    if remaining == 0:
+        conn.execute("DELETE FROM flight_payments WHERE flight_id = ?", (flight_id,))
+        conn.execute("DELETE FROM flights WHERE id = ?", (flight_id,))
+    conn.commit()

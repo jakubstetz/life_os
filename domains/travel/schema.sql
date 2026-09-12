@@ -26,7 +26,6 @@ CREATE TABLE flights (
   cost_currency TEXT,                   -- ISO 4217, e.g. USD
   cost_ineligible_for_points REAL DEFAULT 5.6,        -- Slice of cost that can't be paid with points (e.g. US government fee)
   points_cost REAL,                     -- Price in loyalty points
-  purchase_method TEXT,                 -- e.g. credit card, points, flight credits
   purpose TEXT,
   confirmation_code TEXT,               -- Record locator
   remarks TEXT,
@@ -73,6 +72,47 @@ CREATE TABLE flight_leg_portions (
   updated_at INTEGER            -- UNIX seconds UTC (or NULL if never updated)
 --DERIVED FIELDS:
 --layover_minutes = (next.depart_time - this.arrive_time) / 60.
+);
+
+-- Airline redeemable: e-credit, companion certificate, award, or promo code.
+-- Remaining and status are derived (views.sql travel_credits_current).
+-- original_amount is money (draw-down for flight credits; a cap when uses is set).
+-- uses is how many times it can be applied. Unset on flight credits; usual on companion
+-- certificates and awards; optional on discount codes (unset = unlimited until expiry).
+CREATE TABLE travel_credits (
+  id TEXT PRIMARY KEY,
+  airline TEXT,                 -- IATA; blank if not airline-bound
+  kind TEXT,                    -- flight_credit | companion_certificate | award | discount_code
+  original_amount REAL,         -- Face / max value at issue, in currency
+  currency TEXT,                -- ISO 4217 when original_amount is money
+  uses INTEGER,                 -- Finite applications; unset = unlimited (or N/A)
+  percent_off REAL,             -- Percent discount (20 = 20% off), when applicable
+  expires_at INTEGER,           -- UNIX seconds UTC; unset if it does not expire
+  code TEXT,                    -- E-credit number, voucher/promo code.
+  remarks TEXT,
+  created_at INTEGER NOT NULL,  -- UNIX seconds UTC
+  updated_at INTEGER            -- UNIX seconds UTC (or NULL if never updated)
+--DERIVED FIELDS:
+--remaining_amount = original_amount − SUM(flight_payments.amount) for this credit.
+--remaining_uses   = uses − COUNT(flight_payments) for this credit.
+--status           = used if remaining_uses = 0, or if uses is unset and remaining_amount = 0;
+--                   expired if still remaining and now ≥ expires_at;
+--                   available otherwise.
+);
+
+-- One tender on a ticket. Several rows when a booking mixes card, points, and credits.
+CREATE TABLE flight_payments (
+  id TEXT PRIMARY KEY,
+  flight_id TEXT NOT NULL REFERENCES flights(id),
+  amount REAL,                          -- Money in the ticket's cost_currency; points when this tender is points; uses when travel_credit is limited by uses rather than amount
+  travel_credit_id TEXT REFERENCES travel_credits(id),
+  account_id TEXT,                     -- finances.accounts id when this tender is a card (blank if the account is not recorded yet). No REFERENCES: other volume (`finances.sqlite`)
+  remarks TEXT,
+  created_at INTEGER NOT NULL,          -- UNIX seconds UTC
+  updated_at INTEGER                    -- UNIX seconds UTC (or NULL if never updated)
+--DERIVED FIELDS:
+--kind     = travel_credit if travel_credit_id; card if account_id is set; points otherwise.
+--currency = travel_credits.currency if travel_credit_id; flights.cost_currency if card; unset for points.
 );
 
 -- Catalog of loyalty programs.

@@ -1,6 +1,6 @@
 # Domain: travel
 
-**Purpose.** Track upcoming (and past) **flights**.
+**Purpose.** Track upcoming (and past) **flights** and available airline **redeemables**.
 
 ## How I work with it
 
@@ -25,6 +25,10 @@ I track what travel is connected with my full-time work so that I don't miss sub
 
 I track what travel is tied to my personal LLC so that I don't miss filing these travels as business expenses. Also, even just the existence of this field reminds me to use my business card for purchasing these tickets rather than forgetting and using my personal card. This generally includes any travel done to attend, staff, or facilitate Satvatove seminars.
 
-### Family business  travel
+### Family business travel
 
 I track what travel is tied to my family's business so that I don't miss filing these travels as business expenses. Also, even just the existence of this field reminds me to use a business card for purchasing these tickets rather than forgetting and using my personal card. This generally includes any travel I do to the family property to work there, chat with mom and dad about the work that's happening and finances/admin/legal, etcetera.
+
+### Travel credits
+
+I track my personal wallet of airline redeemables to support myself in making sure I don't lose the information or let the value expire. Redeemables include flight credits, credit card or loyalty awards, companion certificates, or discount promo codes. I don't track Southwest flight credits that don't have expiry dates, since I don't need to worry about losing that value and they're easily accessible on the Southwest website.

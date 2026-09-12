@@ -1,7 +1,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; }
 
-a, button:not(:disabled), .domain-card, .aff-row button, .money-ccy,
+a, button:not(:disabled), .domain-card, .aff-row button, button.money-ccy,
 .search-select-menu button, table.legs tbody tr, table.legs tbody td {
   cursor: pointer !important;
 }
@@ -74,8 +74,38 @@ th,
 .page.wide { max-width: none; }
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) 736px 384px;
   height: calc(100vh - 40px);
+}
+.workspace.is-resizing,
+.workspace.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+.inspector-slot {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.inspector-slot .inspector {
+  flex: 1;
+  min-height: 0;
+}
+.split-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 7px;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+}
+.split-handle:hover,
+.workspace.is-resizing .split-handle:hover {
+  background: color-mix(in oklab, var(--accent) 28%, transparent);
 }
 .board {
   display: flex;
@@ -103,6 +133,284 @@ th,
   gap: 10px;
 }
 .inspector.empty { justify-content: center; align-items: center; }
+.credits-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 12px 14px 16px;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+.credits-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  min-height: 28px;
+}
+.credits-head h2 {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.credits-pane .table-wrap { flex: 1; }
+table.credits th:nth-child(1),
+table.credits td:nth-child(1) {
+  width: 2.25rem;
+  padding-right: 4px;
+}
+/* Value / expires shrink to content; type takes the rest. */
+table.credits th:nth-child(3),
+table.credits td:nth-child(3),
+table.credits th:nth-child(4),
+table.credits td:nth-child(4) {
+  width: 1%;
+  white-space: nowrap;
+}
+table.credits th:nth-child(4),
+table.credits td:nth-child(4) {
+  padding-right: 16px;
+}
+table.credits th:nth-child(2),
+table.credits td:nth-child(2) {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+table.credits tbody tr { cursor: pointer; }
+table.credits tbody tr:not(.credit-open):not(.credit-closing):not(.credit-remarks-row):hover,
+table.credits tbody tr:not(.credit-open):not(.credit-closing):not(.credit-remarks-row):hover td {
+  background: var(--elevated);
+}
+table.credits tbody tr.credit-open,
+table.credits tbody tr.credit-open:hover,
+table.credits tbody tr.credit-remarks-row.open,
+table.credits tbody tr.credit-remarks-row.open:hover,
+table.credits tbody tr.credit-open td,
+table.credits tbody tr.credit-open:hover td,
+table.credits tbody tr.credit-remarks-row.open td,
+table.credits tbody tr.credit-remarks-row.open:hover td {
+  background: var(--accent-tint);
+}
+table.credits tbody tr.credit-edit,
+table.credits tbody tr.credit-edit:hover,
+table.credits tbody tr.credit-remarks-row.credit-edit.open,
+table.credits tbody tr.credit-remarks-row.credit-edit.open:hover,
+table.credits tbody tr.credit-edit td,
+table.credits tbody tr.credit-edit:hover td,
+table.credits tbody tr.credit-remarks-row.credit-edit.open td,
+table.credits tbody tr.credit-remarks-row.credit-edit.open:hover td {
+  background: var(--accent-edit-tint);
+}
+table.credits tbody tr.credit-open,
+table.credits tbody tr.credit-open td,
+table.credits tbody tr.credit-edit,
+table.credits tbody tr.credit-edit td,
+table.credits tbody tr.credit-closing,
+table.credits tbody tr.credit-closing td,
+table.credits tbody tr.credit-remarks-row,
+table.credits tbody tr.credit-remarks-row td {
+  transition: background 340ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+table.credits tbody tr.credit-closing,
+table.credits tbody tr.credit-closing td,
+table.credits tbody tr.credit-remarks-row.credit-closing td {
+  background: transparent;
+}
+tr.credit-remarks-row td {
+  padding: 0 8px;
+  border-bottom: none;
+  background: transparent;
+  white-space: normal;
+}
+tr.credit-remarks-row.open td { border-bottom: 1px solid var(--border); }
+.credit-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 340ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+tr.credit-remarks-row.open .credit-reveal { grid-template-rows: 1fr; }
+@starting-style {
+  tr.credit-remarks-row.open .credit-reveal { grid-template-rows: 0fr; }
+}
+.credit-reveal-inner {
+  overflow: hidden;
+  min-height: 0;
+  opacity: 0;
+  transition: opacity 300ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+tr.credit-remarks-row.open .credit-reveal-inner { opacity: 1; }
+@starting-style {
+  tr.credit-remarks-row.open .credit-reveal-inner { opacity: 0; }
+}
+.credit-edit-extra {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 340ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.credit-edit-extra.open { grid-template-rows: 1fr; }
+@starting-style {
+  .credit-edit-extra.open { grid-template-rows: 0fr; }
+}
+.credit-edit-extra-inner {
+  overflow: hidden;
+  min-height: 0;
+  opacity: 0;
+  transition: opacity 300ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.credit-edit-extra.open .credit-edit-extra-inner { opacity: 1; }
+@starting-style {
+  .credit-edit-extra.open .credit-edit-extra-inner { opacity: 0; }
+}
+.credit-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0 10px;
+}
+.credit-detail-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.credit-detail-k {
+  flex: 0 0 4.6rem;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  user-select: none;
+}
+.credit-detail-row input,
+.credit-detail-row textarea,
+.credit-detail-row select {
+  flex: 1;
+  min-width: 0;
+}
+.credit-detail-inline {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.credit-detail-inline input {
+  flex: 0 1 4rem;
+  width: 4rem;
+  min-width: 2.5rem;
+}
+.credit-detail-hint {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.airline-picker-menu {
+  position: fixed;
+  z-index: 100;
+}
+.airline-picker { position: relative; display: inline-flex; }
+.airline-picker-mark {
+  position: relative;
+  display: inline-flex;
+}
+.airline-picker-caret {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--elevated);
+  border: 1px solid var(--border-strong);
+  color: var(--text-2);
+  box-shadow: 0 1px 3px color-mix(in oklab, black 35%, transparent);
+  pointer-events: none;
+}
+.airline-picker-caret svg {
+  width: 8px;
+  height: 8px;
+}
+.airline-picker-btn {
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.airline-picker-btn:hover {
+  background: color-mix(in oklab, white 5%, transparent);
+}
+table.credits tbody td .airline-picker-btn { cursor: pointer !important; }
+table.credits select.credit-kind {
+  width: 100%;
+  max-width: 100%;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  color-scheme: dark;
+}
+table.credits select.credit-kind:focus,
+table.credits select.credit-kind:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--border-strong) 70%, var(--accent));
+  border-radius: var(--r-sm);
+}
+table.credits .date-picker-trig.plain {
+  font: inherit;
+  font-size: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+table.credits .date-picker-trig.plain:hover,
+table.credits .date-picker-trig.plain.open {
+  color: var(--accent);
+}
+.credit-detail input,
+.credit-detail textarea,
+.credit-detail select {
+  border: 0;
+  padding: 4px 6px;
+  margin: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  border-radius: var(--r-sm);
+}
+.credit-detail textarea {
+  width: 100%;
+  min-height: 0;
+  resize: none;
+}
+.credit-detail input::placeholder,
+.credit-detail textarea::placeholder { color: var(--text-4); }
+.credit-detail input:focus,
+.credit-detail input:focus-visible,
+.credit-detail textarea:focus,
+.credit-detail textarea:focus-visible,
+.credit-detail select:focus,
+.credit-detail select:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--border-strong) 70%, var(--accent));
+  background: color-mix(in oklab, white 3%, transparent);
+}
 .insp-kicker {
   width: fit-content;
 }
@@ -201,6 +509,66 @@ th,
   margin-top: 4px;
   border-top: 1px solid var(--border);
 }
+.pay-block {
+  display: grid;
+  grid-template-columns: 6.75rem minmax(0, 1fr);
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  align-items: start;
+}
+.pay-block.dirty { background: var(--accent-tint); }
+.pay-block .prop-k { padding-top: 8px; }
+.pay-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.pay-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.pay-row select {
+  flex: 0 0 7.2rem;
+  width: 7.2rem;
+}
+.pay-row select.pay-credit,
+.pay-row input.pay-account {
+  flex: 1 1 10rem;
+  width: auto;
+}
+.pay-row .money { flex: 1 1 6rem; min-width: 5rem; }
+.pay-row input[type="number"] { flex: 1 1 5rem; min-width: 4rem; }
+.pay-row .icon { flex: 0 0 auto; }
+.pay-row select,
+.pay-row input {
+  min-width: 0;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  padding: 5px 4px;
+  font: inherit;
+  font-size: 12.5px;
+  color-scheme: dark;
+}
+.pay-add {
+  align-self: start;
+  width: fit-content;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+.credit-usages {
+  margin: 0;
+  padding: 0 0 0 2px;
+  list-style: none;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .prop {
   display: grid;
   grid-template-columns: 6.75rem minmax(0, 1fr);
@@ -229,7 +597,8 @@ th,
   padding-left: 2px;
   user-select: none;
 }
-.prop input {
+.prop input,
+.prop select {
   width: 100%;
   min-width: 0;
   background: transparent;
@@ -247,7 +616,9 @@ th,
   font-variant-numeric: tabular-nums;
 }
 .prop input::placeholder { color: var(--text-4); }
-.prop input:focus { outline: none; }
+.prop input:focus,
+.prop select:focus { outline: none; }
+.prop select { color-scheme: dark; }
 .prop input[type="number"] { -moz-appearance: textfield; }
 .prop input[type="number"]::-webkit-inner-spin-button,
 .prop input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
@@ -301,11 +672,38 @@ th,
   font-size: 12.5px;
   border-radius: var(--r-sm);
 }
-.money-ccy:hover {
+button.money-ccy:hover {
   color: var(--text);
   background: color-mix(in oklab, white 5%, transparent);
 }
 .money-amt { flex: 1; min-width: 0; }
+.context-menu {
+  position: fixed;
+  z-index: 100;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  min-width: 7rem;
+  box-shadow: 0 8px 24px color-mix(in oklab, black 40%, transparent);
+}
+.context-menu button {
+  width: 100%;
+  justify-content: flex-start;
+  border: none;
+  border-radius: var(--r);
+  padding: 5px 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+.context-menu button:hover { background: color-mix(in oklab, white 5%, transparent); }
+.context-menu button.danger { color: var(--bad); }
+.context-menu button.danger:hover {
+  background: color-mix(in oklab, var(--bad) 12%, transparent);
+}
 .money-menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -759,7 +1157,8 @@ th {
   position: sticky;
   top: 0;
 }
-tbody tr { cursor: pointer; }
+table.legs tbody tr { cursor: pointer; }
+tr.credit-remarks-row { cursor: default; }
 table.legs tbody td .iata,
 table.legs tbody td .airline-mark { cursor: pointer !important; }
 .board-end {
@@ -800,8 +1199,14 @@ tr.sel {
   outline: 1px solid var(--accent-line);
   background: var(--accent-tint);
 }
+table.credits tbody tr.credit-open td,
+table.credits tbody tr.credit-closing td { border-bottom: none; }
+table.credits tbody tr.credit-open,
+table.credits tbody tr.credit-closing { outline: none; }
 tr.row-completed,
-tr.row-cancelled { opacity: 0.42; color: var(--text-3); }
+tr.row-cancelled,
+tr.row-used,
+tr.row-expired { opacity: 0.42; color: var(--text-3); }
 .leg-state { width: 1%; }
 .leg-booked {
   color: var(--ok);

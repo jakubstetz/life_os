@@ -1,14 +1,27 @@
-import { Plus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, type LegRow, type Trip, type Valuation } from "./api";
+import { ChevronDown, Plus, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
+import { api, type FlightPayment, type LegRow, type TravelCredit, type Trip, type Valuation } from "./api";
 import { Iata } from "./AirportCode";
 import { useCatalog } from "./iata";
 import { RouteMap } from "./RouteMap";
 import { DatePicker } from "./DatePicker";
+import { placeFloat } from "./float";
 import { SearchSelect } from "./SearchSelect";
 import {
   cpp,
   layoverLabel,
+  moneySymbol,
   parseInputDate,
   parseInputDateTime,
   unixDate,
@@ -92,22 +105,391 @@ function deriveFromPortions(
 }
 
 const TABS = ["Trips", "Flights", "Flight legs", "Rentals", "Stays"] as const;
+type Tab = (typeof TABS)[number];
+const LIVE_TABS: ReadonlySet<string> = new Set(["Flight legs"]);
+
+const CREDIT_KINDS = [
+  { value: "flight_credit", name: "Flight credit" },
+  { value: "companion_certificate", name: "Companion certificate" },
+  { value: "award", name: "Award" },
+  { value: "discount_code", name: "Discount code" },
+];
+
+const PAYMENT_KINDS = [
+  { value: "card", name: "Card" },
+  { value: "points", name: "Points" },
+  { value: "travel_credit", name: "Travel credit" },
+];
+
+function kindName(kinds: { value: string; name: string }[], value: string | null) {
+  return kinds.find((k) => k.value === value)?.name ?? value;
+}
+
+/** Which create-form fields a redeemable kind actually uses. */
+function creditKindFields(kind: string | null) {
+  const k = kind || "flight_credit";
+  return {
+    showValue: true,
+    valueIsMax: k !== "flight_credit",
+    showUses: k !== "flight_credit",
+    usesRequired: k === "companion_certificate" || k === "award",
+    showPercent: k === "companion_certificate" || k === "discount_code",
+  };
+}
+
+type CreditDraft = {
+  airline: string | null;
+  kind: string;
+  original_amount: number | null;
+  currency: string | null;
+  uses: number | null;
+  percent_off: number | null;
+  expires_at: number | null;
+  code: string;
+  remarks: string;
+};
+
+function creditDraftFrom(credit: TravelCredit): CreditDraft {
+  return {
+    airline: credit.airline,
+    kind: credit.kind ?? "flight_credit",
+    original_amount: credit.original_amount,
+    currency: credit.currency,
+    uses: credit.uses,
+    percent_off: credit.percent_off,
+    expires_at: credit.expires_at,
+    code: credit.code ?? "",
+    remarks: credit.remarks ?? "",
+  };
+}
+
+function applyCreditKind(draft: CreditDraft, kind: string): CreditDraft {
+  const next = { ...draft, kind };
+  if (kind === "flight_credit") {
+    next.currency = draft.currency || "USD";
+    next.uses = null;
+    next.percent_off = null;
+  } else {
+    if (
+      (kind === "companion_certificate" || kind === "award") &&
+      draft.uses == null
+    ) {
+      next.uses = 1;
+    }
+    if (kind === "award") next.percent_off = null;
+    if (!next.currency && draft.original_amount != null) {
+      next.currency = "USD";
+    }
+  }
+  return next;
+}
+
+function creditPayloadFromDraft(draft: CreditDraft) {
+  const kind = draft.kind || "flight_credit";
+  const fields = creditKindFields(kind);
+  const amount = draft.original_amount;
+  return {
+    airline: draft.airline || null,
+    kind,
+    original_amount: amount,
+    currency: amount != null ? draft.currency || "USD" : null,
+    uses:
+      kind === "flight_credit"
+        ? null
+        : fields.usesRequired
+          ? draft.uses ?? 1
+          : draft.uses,
+    percent_off: fields.showPercent ? draft.percent_off : null,
+    expires_at: draft.expires_at,
+    code: draft.code.trim() || null,
+    remarks: draft.remarks.trim() || null,
+  };
+}
+
+type CtxMenuItem = {
+  label: string;
+  danger?: boolean;
+  onClick: () => void | Promise<void>;
+};
+
+/** Same rules as domain.payments._kind — not stored. */
+function paymentKind(p: {
+  travel_credit_id?: string | null;
+  account_id?: string | null;
+}): string {
+  if (p.travel_credit_id) return "travel_credit";
+  if (p.account_id != null) return "card";
+  return "points";
+}
+
+type PayDraft = {
+  id: string;
+  kind: string | null;
+  amount: number | null;
+  travel_credit_id: string | null;
+  account_id: string | null;
+  remarks: string | null;
+};
+
+function asPayDraft(p: FlightPayment, i: number): PayDraft {
+  return {
+    id: p.id || `tmp_${i}`,
+    kind: paymentKind(p),
+    amount: p.amount,
+    travel_credit_id: p.travel_credit_id,
+    account_id: p.account_id,
+    remarks: p.remarks,
+  };
+}
+
+function paymentsForSave(payments: PayDraft[]) {
+  return payments
+    .filter((p) => p.kind !== "travel_credit" || p.travel_credit_id)
+    .map(({ kind, ...rest }) => ({
+      ...rest,
+      account_id: kind === "card" && rest.account_id == null ? "" : rest.account_id,
+    }));
+}
+
+function paymentsFromFlight(flight: Record<string, unknown>): PayDraft[] {
+  const raw = (flight.payments as FlightPayment[] | undefined) ?? [];
+  return raw.map(asPayDraft);
+}
+
+function paymentsEqual(a: PayDraft[], b: PayDraft[]) {
+  if (a.length !== b.length) return false;
+  return a.every(
+    (p, i) =>
+      p.kind === b[i].kind &&
+      p.amount === b[i].amount &&
+      (p.travel_credit_id || "") === (b[i].travel_credit_id || "") &&
+      (p.account_id ?? "") === (b[i].account_id ?? "") &&
+      (p.remarks || "") === (b[i].remarks || ""),
+  );
+}
+
+function valueLabel(c: TravelCredit): string {
+  const bits: string[] = [];
+  if (c.percent_off != null) bits.push(`${c.percent_off}%`);
+  if (c.currency) {
+    // Draw-down e-credits show remaining; use-capped rows show the max.
+    const amt = c.uses != null ? c.original_amount : c.remaining_amount;
+    const money = moneySymbol(amt, c.currency);
+    if (money) bits.push(money);
+  } else if (c.remaining_uses != null) {
+    bits.push(String(c.remaining_uses));
+  }
+  return bits.join(" · ") || "—";
+}
 
 function hasClockTimes(r: LegRow): boolean {
   return r.status !== "planned" && r.flight?.booked_time != null;
 }
 
+const MIN_BOARD = 280;
+const MIN_INSPECTOR = 280;
+const MIN_CREDITS = 240;
+const DEFAULT_INSPECTOR = 736;
+const DEFAULT_CREDITS = 384;
+const PANE_STORE = "lifeos-travel-panes";
+
+type PaneWidths = { inspector: number; credits: number };
+
+function defaultPanes(total: number): PaneWidths {
+  return clampPanes(DEFAULT_INSPECTOR, DEFAULT_CREDITS, total);
+}
+
+function loadPanes(total: number): PaneWidths {
+  try {
+    const raw = localStorage.getItem(PANE_STORE);
+    if (!raw) return defaultPanes(total);
+    const parsed = JSON.parse(raw) as Partial<PaneWidths>;
+    return clampPanes(
+      Number(parsed.inspector) || DEFAULT_INSPECTOR,
+      Number(parsed.credits) || DEFAULT_CREDITS,
+      total,
+    );
+  } catch {
+    return defaultPanes(total);
+  }
+}
+
+function savePanes(panes: PaneWidths) {
+  try {
+    localStorage.setItem(PANE_STORE, JSON.stringify(panes));
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+function clampPanes(insp: number, cred: number, total: number): PaneWidths {
+  if (total <= 0) return { inspector: insp, credits: cred };
+  const maxPair = Math.max(MIN_INSPECTOR + MIN_CREDITS, total - MIN_BOARD);
+  let i = Math.max(MIN_INSPECTOR, insp);
+  let c = Math.max(MIN_CREDITS, cred);
+  if (i + c > maxPair) {
+    const overflow = i + c - maxPair;
+    const iRoom = i - MIN_INSPECTOR;
+    const cRoom = c - MIN_CREDITS;
+    const room = iRoom + cRoom;
+    if (room <= 0) {
+      i = MIN_INSPECTOR;
+      c = Math.min(MIN_CREDITS, maxPair - MIN_INSPECTOR);
+    } else {
+      i -= overflow * (iRoom / room);
+      c -= overflow * (cRoom / room);
+    }
+  }
+  return { inspector: Math.round(i), credits: Math.round(c) };
+}
+
+function RowContextMenu({
+  at,
+  onClose,
+  items,
+}: {
+  at: { x: number; y: number } | null;
+  onClose: () => void;
+  items: CtxMenuItem[];
+}) {
+  const ref = useRef<HTMLUListElement>(null);
+
+  useEffect(() => {
+    if (!at) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current?.contains(e.target as Node)) return;
+      onClose();
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [at, onClose]);
+
+  if (!at || items.length === 0) return null;
+  return (
+    <ul ref={ref} className="context-menu" style={{ left: at.x, top: at.y }}>
+      {items.map((item) => (
+        <li key={item.label}>
+          <button
+            type="button"
+            className={item.danger ? "danger" : undefined}
+            onClick={() => {
+              Promise.resolve(item.onClick()).finally(onClose);
+            }}
+          >
+            {item.label}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SplitHandle({
+  label,
+  onDelta,
+  onDragStart,
+  onDragEnd,
+}: {
+  label: string;
+  onDelta: (dx: number) => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
+}) {
+  const lastX = useRef(0);
+  const dragging = useRef(false);
+  return (
+    <div
+      className="split-handle"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={label}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        dragging.current = true;
+        lastX.current = e.clientX;
+        onDragStart?.();
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        if (!dragging.current) return;
+        const dx = e.clientX - lastX.current;
+        lastX.current = e.clientX;
+        if (dx) onDelta(dx);
+      }}
+      onPointerUp={() => {
+        if (!dragging.current) return;
+        dragging.current = false;
+        onDragEnd?.();
+      }}
+      onPointerCancel={() => {
+        dragging.current = false;
+        onDragEnd?.();
+      }}
+    />
+  );
+}
+
 export function Travel() {
+  const [tab, setTab] = useState<Tab>("Flight legs");
   const [rows, setRows] = useState<LegRow[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
+  const [credits, setCredits] = useState<TravelCredit[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [stubOpen, setStubOpen] = useState(false);
+  const [creditOpen, setCreditOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number;
+    y: number;
+    items: CtxMenuItem[];
+  } | null>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [panes, setPanes] = useState<PaneWidths>(() => loadPanes(window.innerWidth));
+  const [resizing, setResizing] = useState(false);
+
+  const openRowMenu = (e: ReactMouseEvent, items: CtxMenuItem[]) => {
+    e.preventDefault();
+    setCtxMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: items.map((item) => ({
+        ...item,
+        onClick: () =>
+          Promise.resolve(item.onClick()).catch((err) => setErr(String(err))),
+      })),
+    });
+  };
+
+  const fitPanes = useCallback((insp: number, cred: number) => {
+    const total = workspaceRef.current?.clientWidth ?? 0;
+    return clampPanes(insp, cred, total);
+  }, []);
+
+  useLayoutEffect(() => {
+    const total = workspaceRef.current?.clientWidth ?? window.innerWidth;
+    setPanes(() => {
+      try {
+        if (!localStorage.getItem(PANE_STORE)) return defaultPanes(total);
+      } catch {
+        return defaultPanes(total);
+      }
+      return loadPanes(total);
+    });
+    const onResize = () => setPanes((p) => fitPanes(p.inspector, p.credits));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [fitPanes]);
 
   const reload = useCallback(async () => {
-    const [board, t] = await Promise.all([api.legsBoard(), api.trips()]);
+    const [board, t, c] = await Promise.all([api.legsBoard(), api.trips(), api.credits()]);
     setRows(board);
     setTrips(t);
+    setCredits(c);
   }, []);
 
   useEffect(() => {
@@ -154,15 +536,22 @@ export function Travel() {
 
   return (
     <>
-    <div className="workspace">
+    <div
+      className={`workspace${resizing ? " is-resizing" : ""}`}
+      ref={workspaceRef}
+      style={{
+        gridTemplateColumns: `minmax(0, 1fr) ${panes.inspector}px ${panes.credits}px`,
+      }}
+    >
       <div className="board">
         <div className="board-head">
           <div className="tabs">
             {TABS.map((name) => (
               <button
                 key={name}
-                className={name === "Flight legs" ? "on" : ""}
-                disabled={name !== "Flight legs"}
+                className={tab === name ? "on" : ""}
+                disabled={!LIVE_TABS.has(name)}
+                onClick={() => LIVE_TABS.has(name) && setTab(name)}
               >
                 {name}
               </button>
@@ -192,6 +581,19 @@ export function Travel() {
                   key={r.id}
                   className={`${selectedId === r.id ? "sel" : ""} row-${r.status}`}
                   onClick={() => setSelectedId(r.id)}
+                  onContextMenu={(e) =>
+                    openRowMenu(e, [
+                      {
+                        label: "Delete",
+                        danger: true,
+                        onClick: async () => {
+                          await api.deleteLeg(r.id);
+                          if (selectedId === r.id) setSelectedId(null);
+                          await reload();
+                        },
+                      },
+                    ])
+                  }
                 >
                   <td>
                     <AirlineMark code={r.airline} />
@@ -308,14 +710,66 @@ export function Travel() {
         </div>
       </div>
 
-      <Inspector
-        row={selected}
-        trips={trips}
-        onSaved={async () => {
-          await reload();
-        }}
-      />
+      <div className="inspector-slot">
+        <SplitHandle
+          label="Resize inspector"
+          onDragStart={() => setResizing(true)}
+          onDelta={(dx) =>
+            setPanes((p) => fitPanes(p.inspector - dx, p.credits))
+          }
+          onDragEnd={() => {
+            setResizing(false);
+            setPanes((p) => {
+              const next = fitPanes(p.inspector, p.credits);
+              savePanes(next);
+              return next;
+            });
+          }}
+        />
+        <Inspector
+          row={selected}
+          trips={trips}
+          credits={credits}
+          onSaved={async () => {
+            await reload();
+          }}
+        />
+      </div>
 
+      <aside className="credits-pane">
+        <SplitHandle
+          label="Resize credits"
+          onDragStart={() => setResizing(true)}
+          onDelta={(dx) =>
+            setPanes((p) => fitPanes(p.inspector, p.credits - dx))
+          }
+          onDragEnd={() => {
+            setResizing(false);
+            setPanes((p) => {
+              const next = fitPanes(p.inspector, p.credits);
+              savePanes(next);
+              return next;
+            });
+          }}
+        />
+        <div className="credits-head">
+          <h2>Credits</h2>
+          <button className="primary" onClick={() => setCreditOpen(true)}>
+            <Plus size={14} /> New
+          </button>
+        </div>
+        <CreditsTable
+          rows={credits}
+          onUpdated={reload}
+          onError={(msg) => setErr(msg)}
+        />
+      </aside>
+
+      <RowContextMenu
+        at={ctxMenu ? { x: ctxMenu.x, y: ctxMenu.y } : null}
+        onClose={() => setCtxMenu(null)}
+        items={ctxMenu?.items ?? []}
+      />
     </div>
       {stubOpen && (
         <CreateFlightForm
@@ -324,6 +778,15 @@ export function Travel() {
             setStubOpen(false);
             await reload();
             setSelectedId(id);
+          }}
+        />
+      )}
+      {creditOpen && (
+        <CreateCreditForm
+          onClose={() => setCreditOpen(false)}
+          onSaved={async () => {
+            setCreditOpen(false);
+            await reload();
           }}
         />
       )}
@@ -401,6 +864,169 @@ function LayoverCell({
   );
 }
 
+function AirlinePicker({
+  value,
+  options,
+  onChange,
+  onOpenChange,
+}: {
+  value: string | null;
+  options: { value: string; name: string }[];
+  onChange: (value: string | null) => void;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLUListElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [hi, setHi] = useState(0);
+  const [pos, setPos] = useState({ top: -9999, left: -9999 });
+
+  const rows = useMemo(() => {
+    const n = query.trim().toLowerCase();
+    const hits = n
+      ? options.filter(
+          (o) =>
+            o.value.toLowerCase().includes(n) ||
+            o.name.toLowerCase().includes(n),
+        )
+      : options;
+    const out = hits.slice(0, 24).map((o) => ({ ...o, create: false }));
+    const create =
+      n && /^[a-z0-9]{2}$/i.test(n) && !options.some((o) => o.value === n.toUpperCase())
+        ? [{ value: n.toUpperCase(), name: `Use ${n.toUpperCase()}`, create: true }]
+        : [];
+    return [...create, ...out];
+  }, [query, options]);
+
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
+
+  useEffect(() => () => onOpenChange?.(false), [onOpenChange]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (box.current?.contains(e.target as Node)) return;
+      if (menuRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+      setQuery("");
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) searchRef.current?.focus();
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const a = box.current?.getBoundingClientRect();
+      const m = menuRef.current;
+      if (!a) return;
+      setPos(placeFloat(a, { width: m?.offsetWidth || 256, height: m?.offsetHeight || 240 }));
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, rows.length]);
+
+  const pick = (code: string) => {
+    onChange(code);
+    setOpen(false);
+    setQuery("");
+  };
+
+  const menu =
+    open && rows.length > 0
+      ? createPortal(
+          <ul
+            ref={menuRef}
+            className="search-select-menu compact-menu airline-picker-menu"
+            style={{ top: pos.top, left: pos.left }}
+          >
+            <li className="ss-search">
+              <input
+                ref={searchRef}
+                value={query}
+                placeholder="Search airlines"
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setHi(0);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setOpen(false);
+                    setQuery("");
+                  } else if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setHi((i) => Math.min(i + 1, rows.length - 1));
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setHi((i) => Math.max(i - 1, 0));
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    const hit = rows[hi];
+                    if (hit) pick(hit.value);
+                  }
+                }}
+              />
+            </li>
+            {rows.map((r, i) => (
+              <li key={r.value}>
+                <button
+                  type="button"
+                  className={`${i === hi ? "on" : ""} ${r.create ? "create" : ""}`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setHi(i)}
+                  onClick={() => pick(r.value)}
+                >
+                  {r.create ? (
+                    r.name
+                  ) : (
+                    <>
+                      <span className="ss-code">{r.value}</span>
+                      {r.name}
+                    </>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )
+      : null;
+
+  return (
+    <div className="airline-picker" ref={box} onMouseDown={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        className="airline-picker-btn"
+        onClick={() => {
+          setOpen((v) => !v);
+          setQuery("");
+        }}
+      >
+        <span className="airline-picker-mark">
+          <AirlineMark code={value} />
+          <span className="airline-picker-caret" aria-hidden="true">
+            <ChevronDown size={8} strokeWidth={2.5} />
+          </span>
+        </span>
+      </button>
+      {menu}
+    </div>
+  );
+}
+
 function AirlineMark({ code }: { code: string | null }) {
   const iata = (code ?? "").toUpperCase();
   const [src, setSrc] = useState(iata ? `/airlines/${iata}.png` : "");
@@ -444,15 +1070,18 @@ function affiliationOf(row: LegRow): Aff {
 function Inspector({
   row,
   trips,
+  credits,
   onSaved,
 }: {
   row: LegRow | null;
   trips: Trip[];
+  credits: TravelCredit[];
   onSaved: () => void;
 }) {
   const flight = (row?.flight ?? {}) as Record<string, unknown>;
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [portions, setPortions] = useState<PortionDraft[]>([]);
+  const [payments, setPayments] = useState<PayDraft[]>([]);
   const [aff, setAff] = useState<Aff>(null);
   const catalog = useCatalog();
   const [valuations, setValuations] = useState<Valuation[]>([]);
@@ -461,6 +1090,7 @@ function Inspector({
     if (!row) return;
     setDraft({ ...flight });
     setAff(affiliationOf(row));
+    setPayments(paymentsFromFlight(flight));
   }, [row?.id, row?.flight]);
 
   useEffect(() => {
@@ -482,7 +1112,6 @@ function Inspector({
       "cost_currency",
       "cost_ineligible_for_points",
       "points_cost",
-      "purchase_method",
       "purpose",
       "remarks",
       "company_reimbursed_time",
@@ -491,9 +1120,10 @@ function Inspector({
     return (
       keys.some((k) => String(draft[k] ?? "") !== String(flight[k] ?? "")) ||
       aff !== affiliationOf(row) ||
-      !portionsEqual(portions, row.portions)
+      !portionsEqual(portions, row.portions) ||
+      !paymentsEqual(payments, paymentsFromFlight(flight))
     );
-  }, [draft, flight, row, aff, portions]);
+  }, [draft, flight, row, aff, portions, payments]);
 
   const airlineOpts = useMemo(
     () =>
@@ -721,13 +1351,13 @@ function Inspector({
           <span className="prop-k">Average</span>
           <span className="prop-static">{pointsAverage || "—"}</span>
         </div>
-        <Prop label="Payment" dirty={changed("purchase_method")}>
-          <input
-            value={(draft.purchase_method as string) ?? ""}
-            onChange={(e) => set("purchase_method", e.target.value || null)}
-            placeholder="—"
-          />
-        </Prop>
+        <PaymentList
+          payments={payments}
+          credits={credits}
+          defaultCurrency={(draft.cost_currency as string) || "USD"}
+          dirty={!paymentsEqual(payments, paymentsFromFlight(flight))}
+          onChange={setPayments}
+        />
         <Prop label="Purpose" dirty={changed("purpose")}>
           <input
             value={(draft.purpose as string) ?? ""}
@@ -780,6 +1410,7 @@ function Inspector({
             onClick={() => {
               setDraft({ ...flight });
               setPortions(row.portions.map((p) => ({ ...p })));
+              setPayments(paymentsFromFlight(flight));
               setAff(affiliationOf(row));
             }}
           >
@@ -809,6 +1440,7 @@ function Inspector({
                 trip_id: tripId,
                 company_reimbursed_time:
                   aff === "spacex" ? draft.company_reimbursed_time : null,
+                payments: paymentsForSave(payments),
               });
               for (const p of portions) {
                 if (!p.id) continue;
@@ -867,11 +1499,14 @@ function MoneyField({
   amount,
   onCurrency,
   onAmount,
+  deferAmount,
 }: {
   currency: string;
   amount: string;
-  onCurrency: (code: string) => void;
+  onCurrency?: (code: string) => void;
   onAmount: (value: number | null) => void;
+  /** When set, amount is only committed on blur (not each keystroke). */
+  deferAmount?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -896,15 +1531,21 @@ function MoneyField({
 
   return (
     <div className="money" ref={box}>
-      <button
-        type="button"
-        className="money-ccy"
-        onClick={() => setOpen((v) => !v)}
-        title={meta.code}
-      >
-        {meta.symbol}
-      </button>
-      {open && (
+      {onCurrency ? (
+        <button
+          type="button"
+          className="money-ccy"
+          onClick={() => setOpen((v) => !v)}
+          title={meta.code}
+        >
+          {meta.symbol}
+        </button>
+      ) : (
+        <span className="money-ccy" title={meta.code}>
+          {meta.symbol}
+        </span>
+      )}
+      {open && onCurrency ? (
         <ul className="money-menu">
           {CURRENCIES.map((c) => (
             <li key={c.code}>
@@ -922,7 +1563,7 @@ function MoneyField({
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
       <input
         type="text"
         inputMode="decimal"
@@ -949,6 +1590,7 @@ function MoneyField({
         onChange={(e) => {
           const v = e.target.value;
           setText(v);
+          if (deferAmount) return;
           if (v.trim() === "") onAmount(null);
           else {
             const n = Number(v);
@@ -972,6 +1614,8 @@ function CreateFlightForm({
   const [draft, setDraft] = useState<Record<string, unknown>>({
     cost_currency: "USD",
   });
+  const [payments, setPayments] = useState<PayDraft[]>([]);
+  const [credits, setCredits] = useState<TravelCredit[]>([]);
   const [aff, setAff] = useState<Aff>(null);
   const [from, setFrom] = useState<string | null>(null);
   const [to, setTo] = useState<string | null>(null);
@@ -984,6 +1628,7 @@ function CreateFlightForm({
 
   useEffect(() => {
     api.valuations().then(setValuations).catch(() => setValuations([]));
+    api.credits().then(setCredits).catch(() => setCredits([]));
   }, []);
 
   useEffect(() => {
@@ -1157,13 +1802,12 @@ function CreateFlightForm({
             <span className="prop-k">Average</span>
             <span className="prop-static">{pointsAverage || "—"}</span>
           </div>
-          <Prop label="Payment">
-            <input
-              value={(draft.purchase_method as string) ?? ""}
-              onChange={(e) => set("purchase_method", e.target.value || null)}
-              placeholder="—"
-            />
-          </Prop>
+          <PaymentList
+            payments={payments}
+            credits={credits}
+            defaultCurrency={(draft.cost_currency as string) || "USD"}
+            onChange={setPayments}
+          />
           <Prop label="Purpose">
             <input
               value={(draft.purpose as string) ?? ""}
@@ -1238,6 +1882,7 @@ function CreateFlightForm({
                   trip_id: tripId,
                   company_reimbursed_time:
                     aff === "spacex" ? draft.company_reimbursed_time : null,
+                  payments: paymentsForSave(payments),
                   portion: {
                     depart_time,
                     arrive_time,
@@ -1249,6 +1894,834 @@ function CreateFlightForm({
                 const board = await api.legsBoard();
                 const leg = board.find((r) => r.flight_id === f.id);
                 onSaved(leg?.id ?? board[board.length - 1]?.id);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PaymentList({
+  payments,
+  credits,
+  defaultCurrency,
+  dirty,
+  onChange,
+}: {
+  payments: PayDraft[];
+  credits: TravelCredit[];
+  defaultCurrency: string;
+  dirty?: boolean;
+  onChange: (next: PayDraft[]) => void;
+}) {
+  const patch = (i: number, part: Partial<PayDraft>) => {
+    onChange(payments.map((p, j) => (j === i ? { ...p, ...part } : p)));
+  };
+  return (
+    <div className={`pay-block${dirty ? " dirty" : ""}`}>
+      <span className="prop-k">Payment</span>
+      <div className="pay-rows">
+        {payments.length === 0 ? <span className="prop-static">—</span> : null}
+        {payments.map((p, i) => {
+          const credit = credits.find((c) => c.id === p.travel_credit_id);
+          const showMoney =
+            p.kind === "card" || (p.kind === "travel_credit" && !!credit?.currency);
+          const creditOpts = credits
+            .filter((c) => c.status === "available" || c.id === p.travel_credit_id)
+            .map((c) => ({
+              value: c.id,
+              name: [c.airline, kindName(CREDIT_KINDS, c.kind), c.code, valueLabel(c)]
+                .filter(Boolean)
+                .join(" · "),
+            }));
+          return (
+            <div key={p.id} className="pay-row">
+              <select
+                value={p.kind ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "points") {
+                    patch(i, {
+                      kind: v,
+                      travel_credit_id: null,
+                      account_id: null,
+                    });
+                  } else if (v === "travel_credit") {
+                    patch(i, {
+                      kind: v,
+                      amount: null,
+                      account_id: null,
+                    });
+                  } else {
+                    patch(i, {
+                      kind: "card",
+                      travel_credit_id: null,
+                      account_id: p.account_id ?? "",
+                    });
+                  }
+                }}
+              >
+                {PAYMENT_KINDS.map((k) => (
+                  <option key={k.value} value={k.value}>
+                    {k.name}
+                  </option>
+                ))}
+              </select>
+              {p.kind === "card" ? (
+                <input
+                  className="pay-account"
+                  value={p.account_id ?? ""}
+                  placeholder="Account"
+                  onChange={(e) => patch(i, { account_id: e.target.value })}
+                />
+              ) : null}
+              {p.kind === "travel_credit" ? (
+                <select
+                  className="pay-credit"
+                  value={p.travel_credit_id ?? ""}
+                  onChange={(e) => {
+                    const id = e.target.value || null;
+                    const c = credits.find((x) => x.id === id);
+                    if (!c) {
+                      patch(i, { travel_credit_id: id, amount: null });
+                      return;
+                    }
+                    patch(i, {
+                      travel_credit_id: id,
+                      amount: c.currency ? c.remaining_amount : null,
+                    });
+                  }}
+                >
+                  <option value="">Credit…</option>
+                  {creditOpts.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+              {p.kind === "points" ? (
+                <input
+                  type="number"
+                  value={p.amount ?? ""}
+                  placeholder="—"
+                  onChange={(e) =>
+                    patch(i, {
+                      amount: e.target.value === "" ? null : Number(e.target.value),
+                    })
+                  }
+                />
+              ) : showMoney ? (
+                <MoneyField
+                  currency={
+                    p.kind === "travel_credit"
+                      ? credit?.currency || defaultCurrency
+                      : defaultCurrency
+                  }
+                  amount={p.amount == null ? "" : String(p.amount)}
+                  onAmount={(v) => patch(i, { amount: v })}
+                />
+              ) : null}
+              <button
+                type="button"
+                className="icon"
+                onClick={() => onChange(payments.filter((_, j) => j !== i))}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          );
+        })}
+        <button type="button" className="pay-add" onClick={() => {
+          onChange([
+            ...payments,
+            {
+              id: `tmp_${Date.now()}`,
+              kind: "card",
+              amount: null,
+              travel_credit_id: null,
+              account_id: "",
+              remarks: null,
+            },
+          ]);
+        }}>
+          <Plus size={12} /> Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CreditDetailEditor({
+  credit,
+  editing,
+  draft,
+  onDraftChange,
+  onPersist,
+  onSaved,
+}: {
+  credit: TravelCredit;
+  editing: boolean;
+  draft: CreditDraft;
+  onDraftChange: (patch: Partial<CreditDraft>) => void;
+  onPersist: (next: CreditDraft) => void | Promise<void>;
+  onSaved?: () => void | Promise<void>;
+}) {
+  const [code, setCode] = useState(credit.code ?? "");
+  const [remarks, setRemarks] = useState(credit.remarks ?? "");
+  const [viewBusy, setViewBusy] = useState(false);
+
+  useEffect(() => {
+    setCode(credit.code ?? "");
+    setRemarks(credit.remarks ?? "");
+  }, [credit.id, credit.code, credit.remarks]);
+
+  const saveView = async () => {
+    const nextCode = code.trim() || null;
+    const nextRemarks = remarks.trim() || null;
+    if (
+      nextCode === (credit.code ?? null) &&
+      nextRemarks === (credit.remarks ?? null)
+    ) {
+      return;
+    }
+    setViewBusy(true);
+    try {
+      await api.saveCredit(credit.id, {
+        ...creditPayloadFromDraft(creditDraftFrom(credit)),
+        code: nextCode,
+        remarks: nextRemarks,
+      });
+      await onSaved?.();
+    } finally {
+      setViewBusy(false);
+    }
+  };
+
+  const [extraShown, setExtraShown] = useState(editing);
+
+  useLayoutEffect(() => {
+    if (editing) setExtraShown(true);
+  }, [editing]);
+
+  useEffect(() => {
+    if (editing || !extraShown) return;
+    const t = window.setTimeout(() => setExtraShown(false), 400);
+    return () => window.clearTimeout(t);
+  }, [editing, extraShown]);
+
+  const fields = creditKindFields(draft.kind);
+  const num = (v: number | null) => (v == null ? "" : String(v));
+  const usedCount = credit.usages.length;
+  const remainingUses =
+    draft.uses != null ? Math.max(draft.uses - usedCount, 0) : null;
+  const commit = (patch: Partial<CreditDraft>, save = false) => {
+    const next = { ...draft, ...patch };
+    onDraftChange(patch);
+    if (save) onPersist(next);
+  };
+
+  return (
+    <div className="credit-detail" onMouseDown={(e) => e.stopPropagation()}>
+      {extraShown ? (
+        <div
+          className={`credit-edit-extra${editing ? " open" : ""}`}
+          onTransitionEnd={(e) => {
+            if (e.target !== e.currentTarget) return;
+            if (!editing) setExtraShown(false);
+          }}
+        >
+          <div className="credit-edit-extra-inner">
+            {fields.showUses ? (
+              <div className="credit-detail-row">
+                <span className="credit-detail-k">Uses:</span>
+                <div className="credit-detail-inline">
+                  <input
+                    type="number"
+                    min={1}
+                    value={num(draft.uses)}
+                    placeholder={fields.usesRequired ? "1" : "—"}
+                    onChange={(e) =>
+                      onDraftChange({
+                        uses: e.target.value === "" ? null : Number(e.target.value),
+                      })
+                    }
+                    onBlur={(e) =>
+                      commit(
+                        { uses: e.target.value === "" ? null : Number(e.target.value) },
+                        true,
+                      )
+                    }
+                  />
+                  {remainingUses != null ? (
+                    <span className="credit-detail-hint">({remainingUses} remaining)</span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            {fields.showValue ? (
+              <div className="credit-detail-row">
+                <span className="credit-detail-k">
+                  {fields.valueIsMax ? "Max value:" : "Original:"}
+                </span>
+                <MoneyField
+                  currency={draft.currency || "USD"}
+                  amount={num(draft.original_amount)}
+                  deferAmount
+                  onCurrency={(c) => commit({ currency: c }, true)}
+                  onAmount={(v) => commit({ original_amount: v }, true)}
+                />
+              </div>
+            ) : null}
+            {fields.showPercent ? (
+              <div className="credit-detail-row">
+                <span className="credit-detail-k">% off:</span>
+                <input
+                  type="number"
+                  value={num(draft.percent_off)}
+                  placeholder="—"
+                  onChange={(e) =>
+                    onDraftChange({
+                      percent_off: e.target.value === "" ? null : Number(e.target.value),
+                    })
+                  }
+                  onBlur={(e) =>
+                    commit(
+                      {
+                        percent_off:
+                          e.target.value === "" ? null : Number(e.target.value),
+                      },
+                      true,
+                    )
+                  }
+                />
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      <div className="credit-detail-row">
+        <span className="credit-detail-k">Code:</span>
+        <input
+          className="mono"
+          value={editing ? draft.code : code}
+          disabled={!editing && viewBusy}
+          placeholder="—"
+          onChange={(e) => {
+            if (editing) onDraftChange({ code: e.target.value });
+            else setCode(e.target.value);
+          }}
+          onBlur={(e) => {
+            if (editing) commit({ code: e.target.value }, true);
+            else saveView();
+          }}
+        />
+      </div>
+      <div className="credit-detail-row">
+        <span className="credit-detail-k">Remarks:</span>
+        <textarea
+          value={editing ? draft.remarks : remarks}
+          disabled={!editing && viewBusy}
+          placeholder="Add a remark…"
+          rows={2}
+          onChange={(e) => {
+            if (editing) onDraftChange({ remarks: e.target.value });
+            else setRemarks(e.target.value);
+          }}
+          onBlur={(e) => {
+            if (editing) commit({ remarks: e.target.value }, true);
+            else saveView();
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function CreditRow({
+  credit,
+  open,
+  editing,
+  draft,
+  airlineOpts,
+  onToggle,
+  onDraftChange,
+  onPersist,
+  onUpdated,
+  onContextMenu,
+  onAirlinePickerOpenChange,
+}: {
+  credit: TravelCredit;
+  open: boolean;
+  editing: boolean;
+  draft: CreditDraft;
+  airlineOpts: { value: string; name: string }[];
+  onToggle: () => void;
+  onDraftChange: (patch: Partial<CreditDraft>) => void;
+  onPersist: (next: CreditDraft) => void | Promise<void>;
+  onUpdated?: () => void | Promise<void>;
+  onContextMenu: (e: ReactMouseEvent) => void;
+  onAirlinePickerOpenChange?: (open: boolean) => void;
+}) {
+  const [shown, setShown] = useState(open);
+
+  useLayoutEffect(() => {
+    if (open) setShown(true);
+  }, [open]);
+
+  useEffect(() => {
+    if (open || !shown) return;
+    const t = window.setTimeout(() => setShown(false), 400);
+    return () => window.clearTimeout(t);
+  }, [open, shown]);
+
+  const display: TravelCredit = editing
+    ? {
+        ...credit,
+        ...creditPayloadFromDraft(draft),
+        remaining_amount: draft.original_amount,
+        remaining_uses: draft.uses,
+      }
+    : credit;
+
+  return (
+    <Fragment>
+      <tr
+        className={`row-${credit.status}${open ? " sel credit-open" : shown ? " credit-closing" : ""}${editing ? " credit-edit" : ""}`}
+        onClick={onToggle}
+        onContextMenu={onContextMenu}
+      >
+        <td onClick={(e) => editing && e.stopPropagation()}>
+          {editing ? (
+            <AirlinePicker
+              value={draft.airline}
+              options={airlineOpts}
+              onOpenChange={onAirlinePickerOpenChange}
+              onChange={(v) => {
+                const next = { ...draft, airline: v };
+                onDraftChange({ airline: v });
+                onPersist(next);
+              }}
+            />
+          ) : (
+            <AirlineMark code={credit.airline} />
+          )}
+        </td>
+        <td onClick={(e) => editing && e.stopPropagation()}>
+          {editing ? (
+            <select
+              className="credit-kind"
+              value={draft.kind}
+              onChange={(e) => {
+                const next = applyCreditKind(draft, e.target.value || "flight_credit");
+                onDraftChange(next);
+                onPersist(next);
+              }}
+            >
+              {CREDIT_KINDS.map((k) => (
+                <option key={k.value} value={k.value}>
+                  {k.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            kindName(CREDIT_KINDS, display.kind)
+          )}
+        </td>
+        <td className="num">{valueLabel(display) || "—"}</td>
+        <td
+          className="num"
+          onClick={(e) => editing && e.stopPropagation()}
+        >
+          {editing ? (
+            <DatePicker
+              variant="plain"
+              value={unixInputDate(draft.expires_at)}
+              label={unixDate(draft.expires_at) || "—"}
+              onChange={(iso) => {
+                const expires_at = parseInputDate(iso);
+                const next = { ...draft, expires_at };
+                onDraftChange({ expires_at });
+                onPersist(next);
+              }}
+            />
+          ) : (
+            unixDate(display.expires_at) || "—"
+          )}
+        </td>
+      </tr>
+      {shown ? (
+        <tr
+          className={`credit-remarks-row row-${credit.status}${open ? " open" : " credit-closing"}${editing ? " credit-edit" : ""}`}
+        >
+          <td colSpan={4}>
+            <div
+              className="credit-reveal"
+              onTransitionEnd={(e) => {
+                if (e.target !== e.currentTarget) return;
+                if (!open) setShown(false);
+              }}
+            >
+              <div className="credit-reveal-inner">
+                <CreditDetailEditor
+                  credit={credit}
+                  editing={editing}
+                  draft={draft}
+                  onDraftChange={onDraftChange}
+                  onPersist={onPersist}
+                  onSaved={onUpdated}
+                />
+              </div>
+            </div>
+          </td>
+        </tr>
+      ) : null}
+    </Fragment>
+  );
+}
+
+function CreditsTable({
+  rows,
+  onUpdated,
+  onError,
+}: {
+  rows: TravelCredit[];
+  onUpdated?: () => void | Promise<void>;
+  onError?: (msg: string) => void;
+}) {
+  const catalog = useCatalog();
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<CreditDraft | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number;
+    y: number;
+    items: CtxMenuItem[];
+  } | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [airlinePickerOpen, setAirlinePickerOpen] = useState(false);
+
+  const airlineOpts = useMemo(
+    () =>
+      Object.entries(catalog?.airlines ?? {}).map(([value, a]) => ({
+        value,
+        name: a.name,
+      })),
+    [catalog],
+  );
+
+  const startEdit = (credit: TravelCredit) => {
+    setOpenId(credit.id);
+    setEditId(credit.id);
+    setDraft(creditDraftFrom(credit));
+  };
+
+  const persistDraft = async (creditId: string, next: CreditDraft) => {
+    setDraft(next);
+    try {
+      await api.saveCredit(creditId, creditPayloadFromDraft(next));
+      await onUpdated?.();
+    } catch (err) {
+      onError?.(String(err));
+    }
+  };
+
+  useEffect(() => {
+    if (!openId) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (wrapRef.current?.contains(t)) return;
+      const el = t as Element;
+      if (el.closest?.(".airline-picker-menu, .search-select-menu, .context-menu, .date-cal, .money-menu")) return;
+      if (airlinePickerOpen) return;
+      setOpenId(null);
+      setEditId(null);
+      setDraft(null);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [openId, airlinePickerOpen]);
+
+  const collapse = () => {
+    setOpenId(null);
+    setEditId(null);
+    setDraft(null);
+    setAirlinePickerOpen(false);
+  };
+
+  return (
+    <div
+      className="table-wrap"
+      ref={wrapRef}
+      onMouseDown={(e) => {
+        const el = e.target as HTMLElement;
+        if (el.closest("tbody tr")) return;
+        if (airlinePickerOpen) return;
+        if (openId) collapse();
+      }}
+    >
+      <table className="dense credits">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Type</th>
+            <th>Value</th>
+            <th>Expires</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <CreditRow
+              key={r.id}
+              credit={r}
+              open={openId === r.id}
+              editing={editId === r.id}
+              draft={draft ?? creditDraftFrom(r)}
+              airlineOpts={airlineOpts}
+              onToggle={() => {
+                if (openId === r.id) {
+                  setOpenId(null);
+                  setEditId(null);
+                  setDraft(null);
+                } else {
+                  setOpenId(r.id);
+                  if (editId && editId !== r.id) {
+                    setEditId(null);
+                    setDraft(null);
+                  }
+                }
+              }}
+              onDraftChange={(patch) =>
+                setDraft((d) => ({ ...(d ?? creditDraftFrom(r)), ...patch }))
+              }
+              onPersist={(next) => persistDraft(r.id, next)}
+              onUpdated={onUpdated}
+              onAirlinePickerOpenChange={setAirlinePickerOpen}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setCtxMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  items: [
+                    {
+                      label: "Edit",
+                      onClick: () => startEdit(r),
+                    },
+                    {
+                      label: "Delete",
+                      danger: true,
+                      onClick: async () => {
+                        await api.deleteCredit(r.id);
+                        if (openId === r.id) {
+                          setOpenId(null);
+                          setEditId(null);
+                          setDraft(null);
+                        }
+                        await onUpdated?.();
+                      },
+                    },
+                  ],
+                });
+              }}
+            />
+          ))}
+        </tbody>
+      </table>
+      <RowContextMenu
+        at={ctxMenu ? { x: ctxMenu.x, y: ctxMenu.y } : null}
+        onClose={() => setCtxMenu(null)}
+        items={(ctxMenu?.items ?? []).map((item) => ({
+          ...item,
+          onClick: () =>
+            Promise.resolve(item.onClick()).catch((err) => onError?.(String(err))),
+        }))}
+      />
+    </div>
+  );
+}
+
+function CreateCreditForm({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void;
+  onSaved: (id: string) => void;
+}) {
+  const catalog = useCatalog();
+  const [draft, setDraft] = useState<Record<string, unknown>>({
+    kind: "flight_credit",
+    currency: "USD",
+  });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const set = (k: string, v: unknown) => setDraft((d) => ({ ...d, [k]: v }));
+  const num = (k: string) =>
+    draft[k] == null || draft[k] === "" ? "" : String(draft[k]);
+  const airlineOpts = useMemo(
+    () =>
+      Object.entries(catalog?.airlines ?? {}).map(([value, a]) => ({
+        value,
+        name: a.name,
+      })),
+    [catalog],
+  );
+  const airlineCode = ((draft.airline as string) || "").toUpperCase() || null;
+  const kind = (draft.kind as string) || "flight_credit";
+  const fields = creditKindFields(kind);
+
+  return (
+    <div className="modal-scrim" onMouseDown={onClose}>
+      <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+        <h2>New credit</h2>
+        <div className="insp-props">
+          <Prop label="Airline">
+            <SearchSelect
+              value={airlineCode}
+              label={airlineCode ? catalog?.airlines[airlineCode]?.name : null}
+              options={airlineOpts}
+              onChange={(v) => set("airline", v)}
+              allowCreate={(q) => (/^[A-Za-z0-9]{2}$/.test(q) ? q.toUpperCase() : null)}
+            />
+          </Prop>
+          <Prop label="Type">
+            <select
+              value={kind}
+              onChange={(e) => {
+                const v = e.target.value || "flight_credit";
+                setDraft((d) => {
+                  const next: Record<string, unknown> = { ...d, kind: v };
+                  if (v === "flight_credit") {
+                    next.currency = (d.currency as string) || "USD";
+                    next.uses = null;
+                    next.percent_off = null;
+                  } else {
+                    if (
+                      (v === "companion_certificate" || v === "award") &&
+                      d.uses == null
+                    ) {
+                      next.uses = 1;
+                    }
+                    if (v === "award") next.percent_off = null;
+                    if (v === "discount_code" && d.kind === "flight_credit") {
+                      next.uses = null;
+                    }
+                    if (!next.currency && d.original_amount != null) {
+                      next.currency = "USD";
+                    }
+                  }
+                  return next;
+                });
+              }}
+            >
+              {CREDIT_KINDS.map((k) => (
+                <option key={k.value} value={k.value}>
+                  {k.name}
+                </option>
+              ))}
+            </select>
+          </Prop>
+          {fields.showUses ? (
+            <Prop label="Uses">
+              <input
+                type="number"
+                min={1}
+                value={num("uses")}
+                onChange={(e) =>
+                  set("uses", e.target.value === "" ? null : Number(e.target.value))
+                }
+                placeholder={fields.usesRequired ? "1" : "—"}
+              />
+            </Prop>
+          ) : null}
+          {fields.showValue ? (
+            <Prop label={fields.valueIsMax ? "Max value" : "Original"}>
+              <MoneyField
+                currency={(draft.currency as string) || "USD"}
+                amount={num("original_amount")}
+                onCurrency={(c) => set("currency", c)}
+                onAmount={(v) => set("original_amount", v)}
+              />
+            </Prop>
+          ) : null}
+          {fields.showPercent ? (
+            <Prop label="% off">
+              <input
+                type="number"
+                value={num("percent_off")}
+                onChange={(e) =>
+                  set("percent_off", e.target.value === "" ? null : Number(e.target.value))
+                }
+                placeholder="—"
+              />
+            </Prop>
+          ) : null}
+          <Prop label="Expires">
+            <DatePicker
+              value={unixInputDate(draft.expires_at as number | null)}
+              label={unixDate(draft.expires_at as number | null) || "—"}
+              onChange={(iso) => set("expires_at", parseInputDate(iso))}
+            />
+          </Prop>
+          <Prop label="Number">
+            <input
+              value={(draft.code as string) ?? ""}
+              onChange={(e) => set("code", e.target.value || null)}
+              placeholder="—"
+            />
+          </Prop>
+          <Prop label="Remarks">
+            <input
+              value={(draft.remarks as string) ?? ""}
+              onChange={(e) => set("remarks", e.target.value || null)}
+              placeholder="—"
+            />
+          </Prop>
+        </div>
+        <div className="insp-actions">
+          <button type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="primary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const amount = (draft.original_amount as number | null) ?? null;
+                const saved = await api.createCredit({
+                  airline: draft.airline || null,
+                  kind,
+                  original_amount: amount,
+                  currency: amount != null ? (draft.currency as string) || "USD" : null,
+                  uses:
+                    kind === "flight_credit"
+                      ? null
+                      : fields.usesRequired
+                        ? (draft.uses as number | null) ?? 1
+                        : (draft.uses as number | null) ?? null,
+                  percent_off: fields.showPercent
+                    ? (draft.percent_off as number | null) || null
+                    : null,
+                  expires_at: draft.expires_at || null,
+                  code: draft.code || null,
+                  remarks: draft.remarks || null,
+                });
+                onSaved(saved.id);
               } finally {
                 setBusy(false);
               }

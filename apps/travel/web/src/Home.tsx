@@ -13,7 +13,7 @@ export function Home() {
             </span>
             <span>
               <strong>Travel</strong>
-              <em>Flights, trips, point valuations</em>
+              <em>Flights, trips, credits, point valuations</em>
             </span>
             <ChevronRight size={16} className="chev" />
           </Link>

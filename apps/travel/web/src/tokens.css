@@ -43,6 +43,9 @@
   --accent: var(--c-teal);
   --accent-bright: var(--c-teal-bright);
   --accent-tint: color-mix(in oklab, var(--accent) 9%, transparent);
+  /* dark purple base — avoid light --c-violet; it reads brighter in oklab */
+  --accent-edit: color-mix(in oklab, var(--c-violet) 16%, #1a0e30);
+  --accent-edit-tint: color-mix(in oklab, var(--accent-edit) 58%, var(--surface));
   --accent-line: color-mix(in oklab, var(--accent) 32%, transparent);
   --accent-hover: color-mix(in oklab, var(--accent), white 14%);
   --on-accent: var(--c-ink);

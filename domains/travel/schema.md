@@ -25,3 +25,8 @@ Connecting is extra **portions** on one leg. Round-trip and multi-city are extra
 | **Round-trip, one ticket**           | One ticket, two legs (home→far, far→home), portions per leg                          |
 | **Multi-city** (A→B→C on one ticket) | One ticket, one leg per city-pair, portions per leg                                  |
 | **Planned stub**                     | One ticket, one leg, one incomplete portion (date + airports) until routing is known |
+
+
+## `flight_payments` across volumes
+
+`travel_credit_id` is a real foreign key: both tables live in `travel.sqlite`. `account_id` is the id of a card/account in the **finances** volume. It has no `REFERENCES` because SQLite cannot enforce a key across files, and travel stays readable if finance is not mounted. The travel app (or a worker) joins in code once both disks are attached.

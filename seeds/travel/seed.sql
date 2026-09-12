@@ -11,12 +11,12 @@ INSERT INTO trips (id, name, remarks, personal_llc, family_business, company_rei
 INSERT INTO flights (
   id, trip_id, airline, booked_time, cancelled_time, cabin_class,
   cost, cost_currency, cost_ineligible_for_points, points_cost,
-  purchase_method, purpose, confirmation_code, remarks,
+  purpose, confirmation_code, remarks,
   company_reimbursed_time, created_at, updated_at
 ) VALUES (
   'flt_sf_out', 'trip_seminar_sf', 'UA', 1772377200, NULL, 'economy', -- booked 2026-03-01 15:00 UTC
   420.00, 'USD', 5.6, 35000,
-  'credit card', 'work seminar', 'ABCDEF', NULL,
+  'work seminar', 'ABCDEF', NULL,
   NULL, 1772377200, 1772377200
 );
 
@@ -36,12 +36,12 @@ INSERT INTO flight_leg_portions (
 INSERT INTO flights (
   id, trip_id, airline, booked_time, cancelled_time, cabin_class,
   cost, cost_currency, cost_ineligible_for_points, points_cost,
-  purchase_method, purpose, confirmation_code, remarks,
+  purpose, confirmation_code, remarks,
   company_reimbursed_time, created_at, updated_at
 ) VALUES (
   'flt_sf_ret', 'trip_seminar_sf', 'UA', 1772377500, NULL, 'economy', -- booked 2026-03-01 15:05 UTC
   380.00, 'USD', 5.6, 32000,
-  'credit card', 'work seminar', 'GHIJKL', NULL,
+  'work seminar', 'GHIJKL', NULL,
   1772452800, 1772377500, 1772452800 -- reimbursed 2026-03-02 12:00 UTC
 );
 
@@ -63,12 +63,12 @@ INSERT INTO flight_leg_portions (
 INSERT INTO flights (
   id, trip_id, airline, booked_time, cancelled_time, cabin_class,
   cost, cost_currency, cost_ineligible_for_points, points_cost,
-  purchase_method, purpose, confirmation_code, remarks,
+  purpose, confirmation_code, remarks,
   company_reimbursed_time, created_at, updated_at
 ) VALUES (
   'flt_plan', NULL, NULL, NULL, NULL, NULL,
   NULL, NULL, 5.6, NULL,
-  NULL, NULL, NULL, 'Need to book',
+  NULL, NULL, 'Need to book',
   NULL, 1785578400, 1785578400 -- created 2026-08-01 10:00 UTC
 );
 
@@ -88,12 +88,12 @@ INSERT INTO flight_leg_portions (
 INSERT INTO flights (
   id, trip_id, airline, booked_time, cancelled_time, cabin_class,
   cost, cost_currency, cost_ineligible_for_points, points_cost,
-  purchase_method, purpose, confirmation_code, remarks,
+  purpose, confirmation_code, remarks,
   company_reimbursed_time, created_at, updated_at
 ) VALUES (
   'flt_cancel', NULL, NULL, NULL, 1780315200, NULL, -- cancelled 2026-06-01 12:00 UTC
   NULL, NULL, 5.6, NULL,
-  NULL, NULL, NULL, 'Dropped',
+  NULL, NULL, 'Dropped',
   NULL, 1780315200, 1780315200
 );
 
@@ -113,12 +113,12 @@ INSERT INTO flight_leg_portions (
 INSERT INTO flights (
   id, trip_id, airline, booked_time, cancelled_time, cabin_class,
   cost, cost_currency, cost_ineligible_for_points, points_cost,
-  purchase_method, purpose, confirmation_code, remarks,
+  purpose, confirmation_code, remarks,
   company_reimbursed_time, created_at, updated_at
 ) VALUES (
   'flt_jp_rt', 'trip_japan', 'NH', 1776276000, NULL, 'business', -- booked 2026-04-15 18:00 UTC
   890.00, 'USD', 5.6, 45000,
-  'points', 'personal', 'RTJPN1', NULL,
+  'personal', 'RTJPN1', NULL,
   NULL, 1776276000, 1776276000
 );
 
@@ -141,12 +141,12 @@ INSERT INTO flight_leg_portions (
 INSERT INTO flights (
   id, trip_id, airline, booked_time, cancelled_time, cabin_class,
   cost, cost_currency, cost_ineligible_for_points, points_cost,
-  purchase_method, purpose, confirmation_code, remarks,
+  purpose, confirmation_code, remarks,
   company_reimbursed_time, created_at, updated_at
 ) VALUES (
   'flt_multi', NULL, 'AA', 1775034000, NULL, 'economy', -- booked 2026-04-01 09:00 UTC
   310.00, 'USD', 5.6, 22000,
-  'credit card', NULL, 'MC001', NULL,
+  NULL, 'MC001', NULL,
   NULL, 1775034000, 1775034000
 );
 
@@ -169,12 +169,12 @@ INSERT INTO flight_leg_portions (
 INSERT INTO flights (
   id, trip_id, airline, booked_time, cancelled_time, cabin_class,
   cost, cost_currency, cost_ineligible_for_points, points_cost,
-  purchase_method, purpose, confirmation_code, remarks,
+  purpose, confirmation_code, remarks,
   company_reimbursed_time, created_at, updated_at
 ) VALUES (
   'flt_llc', 'trip_satvatove', 'UA', 1776276000, NULL, 'economy',
   240.00, 'USD', 5.6, 18000,
-  'credit card', 'Satvatove seminar', 'LLC001', NULL,
+  'Satvatove seminar', 'LLC001', NULL,
   NULL, 1776276000, 1776276000
 );
 
@@ -194,12 +194,12 @@ INSERT INTO flight_leg_portions (
 INSERT INTO flights (
   id, trip_id, airline, booked_time, cancelled_time, cabin_class,
   cost, cost_currency, cost_ineligible_for_points, points_cost,
-  purchase_method, purpose, confirmation_code, remarks,
+  purpose, confirmation_code, remarks,
   company_reimbursed_time, created_at, updated_at
 ) VALUES (
   'flt_fam', 'trip_family', 'AA', 1772452800, NULL, 'economy',
   180.00, 'USD', 5.6, 12000,
-  'credit card', 'family property', 'FAM001', NULL,
+  'family property', 'FAM001', NULL,
   NULL, 1772452800, 1772452800
 );
 
@@ -214,6 +214,36 @@ INSERT INTO flight_leg_portions (
   1783170000, 1783174800, -- MIA 2026-07-04 09:00 EDT; TLH 10:20 EDT
   'MIA', 'TLH', 'AA3300', 'OH', 1772452800, 1772452800 -- PSA (OH)
 );
+
+-- Credits: draw-down e-credits, 1-use companion/award, unlimited promo, expired.
+INSERT INTO travel_credits (
+  id, airline, kind, original_amount, currency, uses, percent_off,
+  expires_at, code, remarks, created_at, updated_at
+) VALUES
+  ('cr_ua_ecredit', 'UA', 'flight_credit', 400.00, 'USD', NULL, NULL,
+   1803859200, 'UA-EC-4001', NULL, 1772377200, 1772377200), -- expires 2027-03-01 00:00 UTC
+  ('cr_ua_companion', 'UA', 'companion_certificate', 600.00, 'USD', 1, 50,
+   1798675200, 'UA-CMP-18', 'MileagePlus companion', 1772377200, 1772377200), -- expires 2026-12-31 00:00 UTC
+  ('cr_aa_promo', 'AA', 'discount_code', NULL, NULL, NULL, 20,
+   1790812800, 'FALL20', NULL, 1775034000, 1775034000), -- unlimited until 2026-10-01 00:00 UTC
+  ('cr_ua_award', 'UA', 'award', NULL, NULL, 1, NULL,
+   1794700800, 'UA-AW-77', 'Premier award', 1772377200, 1772377200), -- expires 2026-11-15 00:00 UTC
+  ('cr_aa_used', 'AA', 'flight_credit', 50.00, 'USD', NULL, NULL,
+   1798675200, 'AA-EC-50', NULL, 1772452800, 1772452800), -- expires 2026-12-31 00:00 UTC
+  ('cr_expired', 'UA', 'flight_credit', 75.00, 'USD', NULL, NULL,
+   1748736000, 'UA-EC-OLD', 'Lapsed', 1738886400, 1738886400); -- expired 2025-06-01 00:00 UTC
+
+INSERT INTO flight_payments (
+  id, flight_id, amount, travel_credit_id, account_id, remarks, created_at, updated_at
+) VALUES
+  ('pay_sf_out_cr', 'flt_sf_out', 250.00, 'cr_ua_ecredit', NULL, NULL, 1772377200, 1772377200),
+  ('pay_sf_out_card', 'flt_sf_out', 170.00, NULL, '', NULL, 1772377200, 1772377200),
+  ('pay_sf_ret_card', 'flt_sf_ret', 380.00, NULL, '', NULL, 1772377500, 1772377500),
+  ('pay_jp_pts', 'flt_jp_rt', 45000, NULL, NULL, NULL, 1776276000, 1776276000),
+  ('pay_multi_card', 'flt_multi', 310.00, NULL, '', NULL, 1775034000, 1775034000),
+  ('pay_llc_card', 'flt_llc', 240.00, NULL, '', NULL, 1776276000, 1776276000),
+  ('pay_fam_cr', 'flt_fam', 50.00, 'cr_aa_used', NULL, NULL, 1772452800, 1772452800),
+  ('pay_fam_card', 'flt_fam', 130.00, NULL, '', NULL, 1772452800, 1772452800);
 
 -- Point valuations as of 2025-02-07 00:00 UTC (1738886400)
 INSERT INTO loyalty_programs (id, kind, name, airline, created_at, updated_at) VALUES

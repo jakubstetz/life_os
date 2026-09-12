@@ -1,3 +1,42 @@
+export type FlightPayment = {
+  id: string;
+  flight_id: string;
+  /** Derived: travel_credit_id → travel_credit; account_id set → card; else points. */
+  kind: string | null;
+  amount: number | null;
+  /** Derived: credit currency, or the ticket's cost_currency for a card. */
+  currency: string | null;
+  travel_credit_id: string | null;
+  account_id: string | null;
+  remarks: string | null;
+};
+
+export type CreditUsage = {
+  id: string;
+  flight_id: string;
+  amount: number | null;
+  currency: string | null;
+  confirmation_code: string | null;
+  flight_airline: string | null;
+};
+
+export type TravelCredit = {
+  id: string;
+  airline: string | null;
+  kind: string | null;
+  original_amount: number | null;
+  currency: string | null;
+  uses: number | null;
+  percent_off: number | null;
+  expires_at: number | null;
+  code: string | null;
+  remarks: string | null;
+  remaining_amount: number | null;
+  remaining_uses: number | null;
+  status: string;
+  usages: CreditUsage[];
+};
+
 export type Flight = {
   id: string;
   trip_id: string | null;
@@ -10,8 +49,8 @@ export type Flight = {
   cost_currency: string | null;
   cost_ineligible_for_points: number | null;
   points_cost: number | null;
-  purchase_method: string | null;
   purpose: string | null;
+  payments: FlightPayment[];
   confirmation_code: string | null;
   remarks: string | null;
   company_reimbursed_time: number | null;
@@ -168,9 +207,16 @@ export const api = {
   addPortion: (legId: string, body: Record<string, unknown>) =>
     req<Portion>("POST", `/api/legs/${legId}/portions`, body),
   addLeg: (flightId: string) => req<unknown>("POST", `/api/flights/${flightId}/legs`, {}),
+  deleteLeg: (id: string) => req<void>("DELETE", `/api/legs/${id}`),
   trips: () => req<Trip[]>("GET", "/api/trips"),
   saveTrip: (id: string, body: Record<string, unknown>) =>
     req<Trip>("PUT", `/api/trips/${id}`, body),
   createTrip: (body: Record<string, unknown>) => req<Trip>("POST", "/api/trips", body),
   valuations: () => req<Valuation[]>("GET", "/api/valuations"),
+  credits: () => req<TravelCredit[]>("GET", "/api/credits"),
+  saveCredit: (id: string, body: Record<string, unknown>) =>
+    req<TravelCredit>("PUT", `/api/credits/${id}`, body),
+  createCredit: (body: Record<string, unknown>) =>
+    req<TravelCredit>("POST", "/api/credits", body),
+  deleteCredit: (id: string) => req<void>("DELETE", `/api/credits/${id}`),
 };

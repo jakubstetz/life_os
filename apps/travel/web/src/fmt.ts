@@ -30,6 +30,22 @@ export function money(n: number | null | undefined, ccy?: string | null): string
   return ccy ? `${ccy} ${s}` : s;
 }
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$",
+  EUR: "€",
+  GBP: "£",
+  PLN: "zł",
+};
+
+/** Remaining/value display: `$150.00` rather than `USD 150.00`. */
+export function moneySymbol(n: number | null | undefined, ccy?: string | null): string {
+  if (n == null) return "";
+  const s = n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (!ccy) return s;
+  const sym = CURRENCY_SYMBOLS[ccy.toUpperCase()] ?? ccy;
+  return `${sym}${s}`;
+}
+
 export function pts(n: number | null | undefined): string {
   if (n == null) return "";
   return Math.round(n).toLocaleString();

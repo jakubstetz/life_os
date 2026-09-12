@@ -3,9 +3,9 @@ from __future__ import annotations
 import os
 import sqlite3
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
-from domain import flights, iata, legs, portions, quotes, stubs, trips
+from domain import credits, flights, iata, legs, portions, quotes, stubs, trips
 from domain.db import connect
 
 router = APIRouter()
@@ -235,6 +235,18 @@ def put_leg(leg_id: str, body: dict):
         conn.close()
 
 
+@router.delete("/legs/{leg_id}")
+def delete_leg(leg_id: str):
+    conn = _conn()
+    try:
+        legs.delete_leg(conn, leg_id)
+        return Response(status_code=204)
+    except KeyError:
+        raise HTTPException(404, "leg not found")
+    finally:
+        conn.close()
+
+
 @router.put("/portions/{portion_id}")
 def put_portion(portion_id: str, body: dict):
     conn = _conn()
@@ -255,6 +267,59 @@ def post_portion(leg_id: str, body: dict):
         return portions.add_portion(conn, leg_id, body)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    finally:
+        conn.close()
+
+
+@router.get("/credits")
+def get_credits():
+    conn = _conn()
+    try:
+        return credits.list_credits(conn)
+    finally:
+        conn.close()
+
+
+@router.get("/credits/{credit_id}")
+def get_credit(credit_id: str):
+    conn = _conn()
+    try:
+        row = credits.get_credit(conn, credit_id)
+        if not row:
+            raise HTTPException(404, "credit not found")
+        return row
+    finally:
+        conn.close()
+
+
+@router.put("/credits/{credit_id}")
+def put_credit(credit_id: str, body: dict):
+    conn = _conn()
+    try:
+        body = dict(body)
+        body["id"] = credit_id
+        return credits.save_credit(conn, body)
+    finally:
+        conn.close()
+
+
+@router.post("/credits")
+def post_credit(body: dict):
+    conn = _conn()
+    try:
+        return credits.save_credit(conn, body)
+    finally:
+        conn.close()
+
+
+@router.delete("/credits/{credit_id}")
+def delete_credit(credit_id: str):
+    conn = _conn()
+    try:
+        credits.delete_credit(conn, credit_id)
+        return Response(status_code=204)
+    except KeyError:
+        raise HTTPException(404, "credit not found")
     finally:
         conn.close()
 

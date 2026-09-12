@@ -18,3 +18,4 @@ __pycache__/
 apps/**/node_modules/
 apps/**/dist/
 apps/**/.venv/
+*.tsbuildinfo

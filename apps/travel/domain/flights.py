@@ -4,6 +4,7 @@ import sqlite3
 
 from domain.db import now
 from domain.ids import new_id
+from domain.payments import list_for_flight, replace_for_flight
 
 _FLIGHT_COLS = (
     "trip_id",
@@ -15,7 +16,6 @@ _FLIGHT_COLS = (
     "cost_currency",
     "cost_ineligible_for_points",
     "points_cost",
-    "purchase_method",
     "purpose",
     "confirmation_code",
     "remarks",
@@ -115,6 +115,7 @@ def _enrich(conn: sqlite3.Connection, flight: dict, at: int | None = None) -> di
     out["personal_llc"] = bool(trip["personal_llc"]) if trip else False
     out["family_business"] = bool(trip["family_business"]) if trip else False
     out["company_reimbursable"] = bool(trip["company_reimbursable"]) if trip else False
+    out["payments"] = list_for_flight(conn, flight["id"])
     return out
 
 
@@ -198,6 +199,8 @@ def create_flight(conn: sqlite3.Connection, body: dict) -> dict:
         ),
     )
     conn.commit()
+    if "payments" in body:
+        replace_for_flight(conn, flight_id, body.get("payments") or [])
     saved = get_flight(conn, flight_id)
     assert saved is not None
     return saved
@@ -226,6 +229,8 @@ def save_flight(conn: sqlite3.Connection, flight: dict) -> dict:
         ),
     )
     conn.commit()
+    if "payments" in flight:
+        replace_for_flight(conn, flight_id, flight.get("payments") or [])
     saved = get_flight(conn, flight_id)
     assert saved is not None
     return saved
