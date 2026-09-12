@@ -2,7 +2,8 @@
 body { margin: 0; }
 
 a, button:not(:disabled), .domain-card, .aff-row button, button.money-ccy,
-.search-select-menu button, table.legs tbody tr, table.legs tbody td {
+.search-select-menu button, table.legs tbody tr, table.legs tbody td,
+table.flights tbody tr, table.flights tbody td {
   cursor: pointer !important;
 }
 input, textarea, select, .prop, .prop input, .search-select input {
@@ -133,6 +134,38 @@ th,
   gap: 10px;
 }
 .inspector.empty { justify-content: center; align-items: center; }
+.muted { color: var(--text-3); }
+.insp-legs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.insp-legs button {
+  width: 100%;
+  justify-content: space-between;
+  gap: 10px;
+  border: none;
+  background: transparent;
+  padding: 4px 6px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.insp-legs button:hover {
+  color: var(--text);
+  background: var(--elevated);
+}
+.insp-legs button.on {
+  color: var(--text);
+  background: var(--accent-tint);
+  border-color: transparent;
+}
+.insp-leg-route {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
 .credits-pane {
   position: relative;
   display: flex;
@@ -414,11 +447,48 @@ table.credits .date-picker-trig.plain.open {
 .insp-kicker {
   width: fit-content;
 }
-.insp-head { display: flex; gap: 12px; align-items: center; }
+.insp-top {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 12px 16px;
+  align-items: start;
+}
+.insp-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+.insp-purpose {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--text-2);
+  text-align: right;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: calc(1.35em * 2);
+  vertical-align: top;
+}
+.insp-purpose::placeholder { color: var(--text-3); opacity: 1; }
+.insp-purpose:focus,
+.insp-purpose:focus-visible {
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+}
 .insp-head .logo,
 .insp-head .logo-fallback {
   width: 26px;
   height: 26px;
+  margin-top: 0.05em;
 }
 .insp-head .logo-fallback { font-size: 10px; }
 .insp-route {
@@ -500,6 +570,7 @@ table.credits .date-picker-trig.plain.open {
   border-color: var(--accent-line);
 }
 .insp-pnr:focus-visible,
+.insp-purpose:focus-visible,
 .portion-list input:focus-visible {
   outline: none;
 }
@@ -1157,10 +1228,26 @@ th {
   position: sticky;
   top: 0;
 }
+/* Slightly tighter padding on movement columns — purpose picks up the slack naturally */
+table.legs th:nth-child(2),
+table.legs td:nth-child(2),
+table.legs th:nth-child(3),
+table.legs td:nth-child(3),
+table.legs th:nth-child(4),
+table.legs td:nth-child(4),
+table.flights th:nth-child(2),
+table.flights td:nth-child(2),
+table.flights th:nth-child(3),
+table.flights td:nth-child(3) {
+  padding-left: 6px;
+  padding-right: 6px;
+}
 table.legs tbody tr { cursor: pointer; }
 tr.credit-remarks-row { cursor: default; }
 table.legs tbody td .iata,
-table.legs tbody td .airline-mark { cursor: pointer !important; }
+table.legs tbody td .airline-mark,
+table.flights tbody td .iata,
+table.flights tbody td .airline-mark { cursor: pointer !important; }
 .board-end {
   display: inline-flex;
   align-items: baseline;
@@ -1195,9 +1282,21 @@ table.legs .board-end input[type="time"]:focus-visible {
   outline: none;
 }
 tbody tr:hover { background: var(--elevated); }
+table.legs tr.sib,
+table.flights tr.sib {
+  background: color-mix(in oklab, var(--accent) 5%, transparent);
+}
+table.legs tr.sib td:first-child,
+table.flights tr.sib td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent-line);
+}
 tr.sel {
   outline: 1px solid var(--accent-line);
   background: var(--accent-tint);
+}
+table.legs tr.sel td:first-child,
+table.flights tr.sel td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 table.credits tbody tr.credit-open td,
 table.credits tbody tr.credit-closing td { border-bottom: none; }
@@ -1207,13 +1306,29 @@ tr.row-completed,
 tr.row-cancelled,
 tr.row-used,
 tr.row-expired { opacity: 0.42; color: var(--text-3); }
-.leg-state { width: 1%; }
-.leg-booked {
-  color: var(--ok);
-  font-size: 11px;
-  font-weight: 500;
-  font-family: var(--font-mono);
+.leg-state {
+  width: 1%;
+  padding-right: 16px;
+  text-align: right;
 }
+.flight-route { display: inline-flex; align-items: baseline; gap: 0.3em; }
+.pnr-cell {
+  max-width: 7.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.purpose-cell {
+  min-width: 8rem;
+  color: var(--text-2);
+}
+.leg-booked,
+.leg-unbooked {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+.leg-booked { color: var(--ok); }
+.leg-unbooked { color: var(--warn); }
 .clip { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .routing { max-width: 240px; }
 .remarks { max-width: 200px; }

@@ -1,4 +1,4 @@
-import { ChevronDown, Plus, X } from "lucide-react";
+import { ChevronDown, CircleCheck, CircleDashed, Plus, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import {
   Fragment,
@@ -11,7 +11,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
-import { api, type FlightPayment, type LegRow, type TravelCredit, type Trip, type Valuation } from "./api";
+import { api, type Flight, type FlightPayment, type LegRow, type TravelCredit, type Trip, type Valuation } from "./api";
 import { Iata } from "./AirportCode";
 import { useCatalog } from "./iata";
 import { RouteMap } from "./RouteMap";
@@ -21,7 +21,9 @@ import { SearchSelect } from "./SearchSelect";
 import {
   cpp,
   layoverLabel,
+  money,
   moneySymbol,
+  pts,
   parseInputDate,
   parseInputDateTime,
   unixDate,
@@ -106,7 +108,30 @@ function deriveFromPortions(
 
 const TABS = ["Trips", "Flights", "Flight legs", "Rentals", "Stays"] as const;
 type Tab = (typeof TABS)[number];
-const LIVE_TABS: ReadonlySet<string> = new Set(["Flight legs"]);
+const LIVE_TABS: ReadonlySet<string> = new Set(["Flights", "Flight legs"]);
+
+function sortLegs(a: LegRow, b: LegRow) {
+  return (a.depart_time ?? 0) - (b.depart_time ?? 0);
+}
+
+function ticketKind(
+  legs: LegRow[],
+): "one_way" | "round_trip" | "multi_city" | null {
+  if (legs.length <= 0) return null;
+  if (legs.length === 1) return "one_way";
+  const sorted = [...legs].sort(sortLegs);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  if (
+    legs.length === 2 &&
+    first.origin &&
+    last.destination &&
+    first.origin === last.destination
+  ) {
+    return "round_trip";
+  }
+  return "multi_city";
+}
 
 const CREDIT_KINDS = [
   { value: "flight_credit", name: "Flight credit" },
@@ -289,7 +314,7 @@ function hasClockTimes(r: LegRow): boolean {
 const MIN_BOARD = 280;
 const MIN_INSPECTOR = 280;
 const MIN_CREDITS = 240;
-const DEFAULT_INSPECTOR = 736;
+const DEFAULT_INSPECTOR = 662; // 10% narrower than 736 — more board width for purpose columns
 const DEFAULT_CREDITS = 384;
 const PANE_STORE = "lifeos-travel-panes";
 
@@ -437,9 +462,12 @@ function SplitHandle({
 export function Travel() {
   const [tab, setTab] = useState<Tab>("Flight legs");
   const [rows, setRows] = useState<LegRow[]>([]);
+  const [flights, setFlights] = useState<Flight[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [credits, setCredits] = useState<TravelCredit[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedLegId, setSelectedLegId] = useState<string | null>(null);
+  const [selectedFlightId, setSelectedFlightId] = useState<string | null>(null);
+  const [dataRev, setDataRev] = useState(0);
   const [stubOpen, setStubOpen] = useState(false);
   const [creditOpen, setCreditOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -486,17 +514,58 @@ export function Travel() {
   }, [fitPanes]);
 
   const reload = useCallback(async () => {
-    const [board, t, c] = await Promise.all([api.legsBoard(), api.trips(), api.credits()]);
+    const [board, t, c, f] = await Promise.all([
+      api.legsBoard(),
+      api.trips(),
+      api.credits(),
+      api.flights(),
+    ]);
     setRows(board);
     setTrips(t);
     setCredits(c);
+    setFlights(f);
+    setDataRev((n) => n + 1);
   }, []);
 
   useEffect(() => {
     reload().catch((e) => setErr(String(e)));
   }, [reload]);
 
-  const selected = rows.find((r) => r.id === selectedId) ?? null;
+  const legsByFlight = useMemo(() => {
+    const m = new Map<string, LegRow[]>();
+    for (const r of rows) {
+      const list = m.get(r.flight_id) ?? [];
+      list.push(r);
+      m.set(r.flight_id, list);
+    }
+    for (const list of m.values()) list.sort(sortLegs);
+    return m;
+  }, [rows]);
+
+  const siblings = useMemo(
+    () => (selectedFlightId ? (legsByFlight.get(selectedFlightId) ?? []) : []),
+    [legsByFlight, selectedFlightId],
+  );
+  const selected =
+    siblings.find((r) => r.id === selectedLegId) ?? siblings[0] ?? null;
+
+  const selectLeg = useCallback((id: string, flightId?: string) => {
+    setSelectedLegId(id);
+    const row = rows.find((r) => r.id === id);
+    setSelectedFlightId(flightId ?? row?.flight_id ?? null);
+  }, [rows]);
+
+  const selectFlight = useCallback(
+    (flightId: string) => {
+      setSelectedFlightId(flightId);
+      const legs = legsByFlight.get(flightId) ?? [];
+      setSelectedLegId((cur) =>
+        legs.some((l) => l.id === cur) ? cur : (legs[0]?.id ?? null),
+      );
+    },
+    [legsByFlight],
+  );
+
   const catalog = useCatalog();
   const airportOpts = useMemo(
     () =>
@@ -563,6 +632,31 @@ export function Travel() {
         </div>
         {err && <p className="err">{err}</p>}
         <div className="table-wrap">
+          {tab === "Flights" ? (
+            <FlightsTable
+              flights={flights}
+              legsByFlight={legsByFlight}
+              selectedFlightId={selectedFlightId}
+              onSelect={selectFlight}
+              onContextMenu={(e, flightId) => {
+                const legs = legsByFlight.get(flightId) ?? [];
+                openRowMenu(e, [
+                  {
+                    label: "Delete",
+                    danger: true,
+                    onClick: async () => {
+                      for (const leg of legs) await api.deleteLeg(leg.id);
+                      if (selectedFlightId === flightId) {
+                        setSelectedFlightId(null);
+                        setSelectedLegId(null);
+                      }
+                      await reload();
+                    },
+                  },
+                ]);
+              }}
+            />
+          ) : (
           <table className="dense legs">
             <thead>
               <tr>
@@ -570,8 +664,7 @@ export function Travel() {
                 <th>Date</th>
                 <th>Depart</th>
                 <th>Arrive</th>
-                <th>Layover</th>
-                <th></th>
+                <th>Purpose</th>
                 <th></th>
               </tr>
             </thead>
@@ -579,8 +672,8 @@ export function Travel() {
               {rows.map((r) => (
                 <tr
                   key={r.id}
-                  className={`${selectedId === r.id ? "sel" : ""} row-${r.status}`}
-                  onClick={() => setSelectedId(r.id)}
+                  className={`${selectedFlightId === r.flight_id ? "sib" : ""} ${selected?.id === r.id ? "sel" : ""} row-${r.status}`}
+                  onClick={() => selectLeg(r.id, r.flight_id)}
                   onContextMenu={(e) =>
                     openRowMenu(e, [
                       {
@@ -588,7 +681,7 @@ export function Travel() {
                         danger: true,
                         onClick: async () => {
                           await api.deleteLeg(r.id);
-                          if (selectedId === r.id) setSelectedId(null);
+                          if (selectedLegId === r.id) setSelectedLegId(null);
                           await reload();
                         },
                       },
@@ -660,53 +753,17 @@ export function Travel() {
                       }}
                     />
                   </td>
-                  <td>
-                    <LayoverCell
-                      layover={r.layover}
-                      airportOpts={airportOpts}
-                      onAirport={
-                        r.portions.length === 2
-                          ? (code) => {
-                              const next = r.portions.map((p) => ({ ...p }));
-                              next[0] = { ...next[0], arrive_airport: code };
-                              next[1] = { ...next[1], depart_airport: code };
-                              commitPortions(r, next);
-                            }
-                          : undefined
-                      }
-                    />
+                  <td className="clip purpose-cell">
+                    {((r.flight.purpose as string) || "").trim() || "—"}
                   </td>
                   <td className="leg-state">
-                    {r.status === "booked" ? <span className="leg-booked">booked</span> : null}
-                  </td>
-                  <td className="badges">
-                    {r.company_reimbursable && (
-                      <span
-                        className={`badge-sx ${r.company_reimbursed_time ? "filed" : "unfiled"}`}
-                        title={
-                          r.company_reimbursed_time
-                            ? "Reimbursement filed"
-                            : "Reimbursable — not filed"
-                        }
-                      >
-                        <img src="/badges/spacex.svg" alt="SpaceX" />
-                      </span>
-                    )}
-                    {r.family_business && (
-                      <span className="badge avo" title="Family business">
-                        🥑
-                      </span>
-                    )}
-                    {r.personal_llc && (
-                      <span className="badge pp" title="Personal LLC">
-                        PP
-                      </span>
-                    )}
+                    <BookedMark status={r.status} />
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          )}
         </div>
       </div>
 
@@ -728,8 +785,12 @@ export function Travel() {
         />
         <Inspector
           row={selected}
+          siblings={siblings}
           trips={trips}
           credits={credits}
+          dataRev={dataRev}
+          emptyHint={tab === "Flights" ? "Select a flight" : "Select a flight leg"}
+          onSelectLeg={(id) => selectLeg(id)}
           onSaved={async () => {
             await reload();
           }}
@@ -774,10 +835,10 @@ export function Travel() {
       {stubOpen && (
         <CreateFlightForm
           onClose={() => setStubOpen(false)}
-          onSaved={async (id) => {
+          onSaved={async (legId, flightId) => {
             setStubOpen(false);
             await reload();
-            setSelectedId(id);
+            selectLeg(legId, flightId);
           }}
         />
       )}
@@ -1067,40 +1128,246 @@ function affiliationOf(row: LegRow): Aff {
   return null;
 }
 
+function BookedMark({ status }: { status: string }) {
+  if (status === "booked") {
+    return (
+      <span className="leg-booked" role="img" aria-label="Booked" title="Booked">
+        <CircleCheck size={14} aria-hidden="true" />
+      </span>
+    );
+  }
+  if (status === "planned") {
+    return (
+      <span className="leg-unbooked" role="img" aria-label="Not booked" title="Not booked">
+        <CircleDashed size={14} aria-hidden="true" />
+      </span>
+    );
+  }
+  return null;
+}
+
+function AffBadges({
+  company_reimbursable,
+  company_reimbursed_time,
+  family_business,
+  personal_llc,
+}: {
+  company_reimbursable: boolean;
+  company_reimbursed_time: number | null;
+  family_business: boolean;
+  personal_llc: boolean;
+}) {
+  return (
+    <span className="badges">
+      {company_reimbursable && (
+        <span
+          className={`badge-sx ${company_reimbursed_time ? "filed" : "unfiled"}`}
+          title={
+            company_reimbursed_time
+              ? "Reimbursement filed"
+              : "Reimbursable — not filed"
+          }
+        >
+          <img src="/badges/spacex.svg" alt="SpaceX" />
+        </span>
+      )}
+      {family_business && (
+        <span className="badge avo" title="Family business">
+          🥑
+        </span>
+      )}
+      {personal_llc && (
+        <span className="badge pp" title="Personal LLC">
+          PP
+        </span>
+      )}
+    </span>
+  );
+}
+
+function FlightRoute({ legs }: { legs: LegRow[] }) {
+  const kind = ticketKind(legs);
+  if (!legs.length) return <span className="muted">—</span>;
+  if (kind === "round_trip") {
+    return (
+      <span className="flight-route">
+        <Iata code={legs[0].origin} />
+        <span className="muted">⇄</span>
+        <Iata code={legs[0].destination} />
+      </span>
+    );
+  }
+  if (kind === "multi_city") {
+    const codes = [
+      ...legs.map((l) => l.origin),
+      legs[legs.length - 1].destination,
+    ];
+    return (
+      <span className="flight-route">
+        {codes.map((code, i) => (
+          <span key={`${code ?? "?"}-${i}`}>
+            {i > 0 ? <span className="muted"> → </span> : null}
+            <Iata code={code} />
+          </span>
+        ))}
+      </span>
+    );
+  }
+  return (
+    <span className="flight-route">
+      <Iata code={legs[0].origin} />
+      <span className="muted"> → </span>
+      <Iata code={legs[legs.length - 1].destination} />
+    </span>
+  );
+}
+
+function flightDateLabel(legs: LegRow[]): string {
+  if (!legs.length) return "—";
+  const a = unixDate(legs[0].depart_time);
+  const b = unixDate(legs[legs.length - 1].depart_time);
+  if (!a) return "—";
+  if (!b || a === b) return a;
+  return `${a} – ${b}`;
+}
+
+function FlightsTable({
+  flights,
+  legsByFlight,
+  selectedFlightId,
+  onSelect,
+  onContextMenu,
+}: {
+  flights: Flight[];
+  legsByFlight: Map<string, LegRow[]>;
+  selectedFlightId: string | null;
+  onSelect: (id: string) => void;
+  onContextMenu: (e: ReactMouseEvent, flightId: string) => void;
+}) {
+  return (
+    <table className="dense flights">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Dates</th>
+          <th>Route</th>
+          <th>Code</th>
+          <th>Purpose</th>
+          <th></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {flights.map((f) => {
+          const legs = legsByFlight.get(f.id) ?? [];
+          return (
+            <tr
+              key={f.id}
+              className={`${selectedFlightId === f.id ? "sel" : ""} row-${f.status}`}
+              onClick={() => onSelect(f.id)}
+              onContextMenu={(e) => onContextMenu(e, f.id)}
+            >
+              <td>
+                <AirlineMark code={f.airline} />
+              </td>
+              <td className="num">{flightDateLabel(legs)}</td>
+              <td>
+                <FlightRoute legs={legs} />
+              </td>
+              <td className="mono pnr-cell">{f.confirmation_code || "—"}</td>
+              <td className="clip purpose-cell">{f.purpose?.trim() || "—"}</td>
+              <td>
+                <AffBadges
+                  company_reimbursable={f.company_reimbursable}
+                  company_reimbursed_time={f.company_reimbursed_time}
+                  family_business={f.family_business}
+                  personal_llc={f.personal_llc}
+                />
+              </td>
+              <td className="leg-state">
+                <BookedMark status={f.status} />
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 function Inspector({
   row,
+  siblings,
   trips,
   credits,
+  dataRev,
+  emptyHint,
+  onSelectLeg,
   onSaved,
 }: {
   row: LegRow | null;
+  siblings: LegRow[];
   trips: Trip[];
   credits: TravelCredit[];
+  dataRev: number;
+  emptyHint: string;
+  onSelectLeg: (id: string) => void;
   onSaved: () => void;
 }) {
   const flight = (row?.flight ?? {}) as Record<string, unknown>;
   const [draft, setDraft] = useState<Record<string, unknown>>({});
-  const [portions, setPortions] = useState<PortionDraft[]>([]);
+  const [portionByLeg, setPortionByLeg] = useState<Record<string, PortionDraft[]>>(
+    {},
+  );
   const [payments, setPayments] = useState<PayDraft[]>([]);
   const [aff, setAff] = useState<Aff>(null);
   const catalog = useCatalog();
   const [valuations, setValuations] = useState<Valuation[]>([]);
+  const flightId = row?.flight_id ?? null;
+  const ticketKey = `${flightId ?? ""}:${dataRev}`;
+  const [draftKey, setDraftKey] = useState("");
+  const portionStamp = siblings
+    .map((s) =>
+      s.portions
+        .map(
+          (p) =>
+            `${p.id}:${p.depart_time}:${p.arrive_time}:${p.depart_airport}:${p.arrive_airport}:${p.flight_number}`,
+        )
+        .join(","),
+    )
+    .join("|");
 
-  useEffect(() => {
-    if (!row) return;
+  if (row && ticketKey !== draftKey) {
+    setDraftKey(ticketKey);
     setDraft({ ...flight });
     setAff(affiliationOf(row));
     setPayments(paymentsFromFlight(flight));
-  }, [row?.id, row?.flight]);
+  }
 
   useEffect(() => {
-    if (!row) return;
-    setPortions(row.portions.map((p) => ({ ...p })));
-  }, [row?.id, row?.portions]);
+    const next: Record<string, PortionDraft[]> = {};
+    for (const s of siblings) {
+      next[s.id] = s.portions.map((p) => ({ ...p }));
+    }
+    setPortionByLeg(next);
+  }, [flightId, dataRev, portionStamp]);
 
   useEffect(() => {
     api.valuations().then(setValuations).catch(() => setValuations([]));
   }, []);
+
+  const portions = row ? (portionByLeg[row.id] ?? row.portions) : [];
+
+  const setPortions = (
+    update: PortionDraft[] | ((ps: PortionDraft[]) => PortionDraft[]),
+  ) => {
+    if (!row) return;
+    setPortionByLeg((prev) => {
+      const cur = prev[row.id] ?? row.portions.map((p) => ({ ...p }));
+      const next = typeof update === "function" ? update(cur) : update;
+      return { ...prev, [row.id]: next };
+    });
+  };
 
   const dirty = useMemo(() => {
     if (!row) return false;
@@ -1117,13 +1384,16 @@ function Inspector({
       "company_reimbursed_time",
       "confirmation_code",
     ];
+    const portionsDirty = siblings.some(
+      (s) => !portionsEqual(portionByLeg[s.id] ?? [], s.portions),
+    );
     return (
       keys.some((k) => String(draft[k] ?? "") !== String(flight[k] ?? "")) ||
       aff !== affiliationOf(row) ||
-      !portionsEqual(portions, row.portions) ||
+      portionsDirty ||
       !paymentsEqual(payments, paymentsFromFlight(flight))
     );
-  }, [draft, flight, row, aff, portions, payments]);
+  }, [draft, flight, row, aff, portionByLeg, siblings, payments]);
 
   const airlineOpts = useMemo(
     () =>
@@ -1145,7 +1415,7 @@ function Inspector({
   if (!row) {
     return (
       <aside className="inspector empty">
-        <p className="muted">Select a flight leg</p>
+        <p className="muted">{emptyHint}</p>
       </aside>
     );
   }
@@ -1181,7 +1451,7 @@ function Inspector({
   const destination = portions[portions.length - 1]?.arrive_airport ?? null;
   const showTimes = hasClockTimes(row);
   const pnr = ((draft.confirmation_code as string) || "").trim();
-  const pnrUnbooked = !pnr && row.status === "planned";
+  const pnrUnbooked = !pnr && !flight.booked_time;
   const airlineCode = ((draft.airline as string) || row.airline || "").toUpperCase() || null;
   const pointsValue = cpp(
     draft.cost != null && draft.points_cost
@@ -1203,42 +1473,74 @@ function Inspector({
         label={unixDate(portions[0]?.depart_time ?? row.depart_time) || "—"}
         onChange={(iso) => setPortions((ps) => applyLegDate(ps, iso))}
       />
-      <div className="insp-head">
-        <AirlineMark code={(draft.airline as string) || row.airline} />
-        <div>
-          <div className="insp-route">
-            <SearchSelect
-              className="iata-edit"
-              compact
-              value={origin}
-              label={origin}
-              options={airportOpts}
-              onChange={(v) => {
-                if (portions.length) patchPortion(0, { depart_airport: v });
-              }}
-              allowCreate={iata3}
-            />
-            <span className="insp-route-arrow">→</span>
-            <SearchSelect
-              className="iata-edit"
-              compact
-              value={destination}
-              label={destination}
-              options={airportOpts}
-              onChange={(v) => {
-                if (portions.length) patchPortion(portions.length - 1, { arrive_airport: v });
-              }}
-              allowCreate={iata3}
+      <div className="insp-top">
+        <div className="insp-head">
+          <AirlineMark code={(draft.airline as string) || row.airline} />
+          <div>
+            <div className="insp-route">
+              <SearchSelect
+                className="iata-edit"
+                compact
+                value={origin}
+                label={origin}
+                options={airportOpts}
+                onChange={(v) => {
+                  if (portions.length) patchPortion(0, { depart_airport: v });
+                }}
+                allowCreate={iata3}
+              />
+              <span className="insp-route-arrow">→</span>
+              <SearchSelect
+                className="iata-edit"
+                compact
+                value={destination}
+                label={destination}
+                options={airportOpts}
+                onChange={(v) => {
+                  if (portions.length) patchPortion(portions.length - 1, { arrive_airport: v });
+                }}
+                allowCreate={iata3}
+              />
+            </div>
+            <input
+              className={`insp-pnr${pnrUnbooked ? " unbooked" : ""}`}
+              value={pnr}
+              placeholder={pnrUnbooked ? "Not yet booked" : "No confirmation"}
+              onChange={(e) => set("confirmation_code", e.target.value || null)}
             />
           </div>
-          <input
-            className={`insp-pnr${pnrUnbooked ? " unbooked" : ""}`}
-            value={pnr}
-            placeholder={pnrUnbooked ? "Not yet booked" : "No confirmation"}
-            onChange={(e) => set("confirmation_code", e.target.value || null)}
-          />
         </div>
+        <textarea
+          className="insp-purpose"
+          value={(draft.purpose as string) ?? ""}
+          placeholder="Purpose"
+          rows={2}
+          onChange={(e) => set("purpose", e.target.value || null)}
+        />
       </div>
+
+      {siblings.length > 1 ? (
+        <ul className="insp-legs">
+          {siblings.map((s) => {
+            const from = s.origin ?? "—";
+            const to = s.destination ?? "—";
+            return (
+              <li key={s.id}>
+                <button
+                  type="button"
+                  className={s.id === row.id ? "on" : ""}
+                  onClick={() => onSelectLeg(s.id)}
+                >
+                  <span className="num">{unixDate(s.depart_time) || "—"}</span>
+                  <span className="insp-leg-route">
+                    {from} → {to}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
 
       <RouteMap portions={portions} planned={row.status === "planned"} />
       <ul className="portion-list">
@@ -1358,13 +1660,6 @@ function Inspector({
           dirty={!paymentsEqual(payments, paymentsFromFlight(flight))}
           onChange={setPayments}
         />
-        <Prop label="Purpose" dirty={changed("purpose")}>
-          <input
-            value={(draft.purpose as string) ?? ""}
-            onChange={(e) => set("purpose", e.target.value || null)}
-            placeholder="—"
-          />
-        </Prop>
         <Prop label="Remarks" dirty={changed("remarks")}>
           <input
             value={(draft.remarks as string) ?? ""}
@@ -1409,7 +1704,11 @@ function Inspector({
             disabled={!dirty}
             onClick={() => {
               setDraft({ ...flight });
-              setPortions(row.portions.map((p) => ({ ...p })));
+              const next: Record<string, PortionDraft[]> = {};
+              for (const s of siblings) {
+                next[s.id] = s.portions.map((p) => ({ ...p }));
+              }
+              setPortionByLeg(next);
               setPayments(paymentsFromFlight(flight));
               setAff(affiliationOf(row));
             }}
@@ -1442,17 +1741,19 @@ function Inspector({
                   aff === "spacex" ? draft.company_reimbursed_time : null,
                 payments: paymentsForSave(payments),
               });
-              for (const p of portions) {
-                if (!p.id) continue;
-                await api.savePortion(p.id, {
-                  id: p.id,
-                  flight_leg_id: p.flight_leg_id,
-                  depart_time: p.depart_time,
-                  arrive_time: p.arrive_time,
-                  depart_airport: p.depart_airport,
-                  arrive_airport: p.arrive_airport,
-                  flight_number: p.flight_number,
-                });
+              for (const s of siblings) {
+                for (const p of portionByLeg[s.id] ?? s.portions) {
+                  if (!p.id) continue;
+                  await api.savePortion(p.id, {
+                    id: p.id,
+                    flight_leg_id: p.flight_leg_id,
+                    depart_time: p.depart_time,
+                    arrive_time: p.arrive_time,
+                    depart_airport: p.depart_airport,
+                    arrive_airport: p.arrive_airport,
+                    flight_number: p.flight_number,
+                  });
+                }
               }
               onSaved();
             }}
@@ -1607,7 +1908,7 @@ function CreateFlightForm({
   onSaved,
 }: {
   onClose: () => void;
-  onSaved: (legId: string) => void;
+  onSaved: (legId: string, flightId: string) => void;
 }) {
   const catalog = useCatalog();
   const [valuations, setValuations] = useState<Valuation[]>([]);
@@ -1746,7 +2047,7 @@ function CreateFlightForm({
               placeholder="—"
             />
           </Prop>
-          <Prop label="PNR">
+          <Prop label="Code">
             <input
               value={(draft.confirmation_code as string) ?? ""}
               onChange={(e) => set("confirmation_code", e.target.value || null)}
@@ -1893,7 +2194,7 @@ function CreateFlightForm({
                 });
                 const board = await api.legsBoard();
                 const leg = board.find((r) => r.flight_id === f.id);
-                onSaved(leg?.id ?? board[board.length - 1]?.id);
+                onSaved(leg?.id ?? board[board.length - 1]?.id ?? "", f.id);
               } finally {
                 setBusy(false);
               }
